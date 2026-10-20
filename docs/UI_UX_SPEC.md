@@ -265,6 +265,26 @@ Directly beneath each department section, a live summary row computes:
   - Offers immediate choice between **"📥 Import My Data"** (CSV template upload) and **"⚡ Start from Scratch"** (pre-loaded sample hospital wards and medical staff).
   - Includes interactive help documentation and 3-step quick start guide.
 
+#### 3.15 Manage Organization Multi-Select & Bulk Operations
+* Comprehensive batch management in the Staff Directory table:
+  - Header "Select All" checkbox with automatic indeterminate state tracking.
+  - Row checkboxes on every employee entry.
+  - Floating bulk actions toolbar displaying selected headcount (`{N} employees selected`).
+  - **`✏️ Bulk Edit Selected` Modal:** Allows bulk-updating primary department, max weekly contracted hours, recurring dedicated days off, and active status in one click.
+  - **`🗑️ Bulk Delete Selected` Action:** Protected confirmation dialog for fast clean-up of staff entries and related eligibility records.
+
+#### 3.16 Clear All Cells / Reset Canvas
+* Ribbon action (`🗑️ Clear Canvas`) in the Schedule & Solve pane:
+  - Opens a confirmation dialog allowing managers to wipe all shift assignments and deficits from the active roster plan.
+  - Provides a clean slate for manual painting or re-solving while preserving employees, departments, demand rules, and vacation records.
+
+#### 3.17 Distinct Cell States in Shift Inspector (Empty vs Pinned Day Off vs Pinned Comp Off)
+* Replaces ambiguous clear buttons with three distinct actions:
+  - **`🗑️ Set as Empty (Fillable by Solver)`:** Removes assignments and single-day off records; cell is marked blank so the CP-SAT optimization algorithm can assign shifts to satisfy demand.
+  - **`📌 Pin as Day OFF (DO)`:** Locks the cell as an explicit Day OFF badge (`📌 DO`). Enforces hard constraint $Y_{e, t} = 0$, guaranteeing the solver never schedules the worker.
+  - **`☕ Pin as Comp Off (Coff)`:** Locks the cell as a Compensatory Off badge (`☕ COFF`). Enforces hard constraint $Y_{e, t} = 0$, guaranteeing the solver never schedules the worker.
+  - **`Pin Shift 📌`:** Locks the assigned work shift (e.g. MORN, EVE, NIGHT) so the solver does not alter or reassign it.
+
 ---
 
 ### 4. Offline State Management & Resilience Patterns

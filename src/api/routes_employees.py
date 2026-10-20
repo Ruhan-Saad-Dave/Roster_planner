@@ -11,7 +11,8 @@ from src.db.models import (
 from src.api.schemas import (
     EmployeeCreate, EmployeeUpdate, EmployeeResponse,
     UpdateEligibilityRequest, UpdateShiftPreferencesRequest,
-    LeaveRecordCreate, LeaveRecordResponse
+    LeaveRecordCreate, LeaveRecordResponse,
+    BulkDeleteEmployeesRequest, BulkUpdateEmployeesRequest
 )
 
 router = APIRouter(prefix="/api", tags=["Employees & Leaves"])
@@ -79,6 +80,12 @@ def update_employee(emp_id: int, emp_in: EmployeeUpdate, db: Session = Depends(g
         if not new_dept:
             raise HTTPException(status_code=400, detail="Target primary department does not exist.")
         emp.primary_department_id = emp_in.primary_department_id
+
+        # Clear any existing secondary eligibility for new primary to avoid unique constraint clash
+        db.query(EmployeeDepartmentEligibility).filter(
+            EmployeeDepartmentEligibility.employee_id == emp.id,
+            EmployeeDepartmentEligibility.department_id == new_dept.id
+        ).delete()
 
         # Update primary eligibility
         home_elig = db.query(EmployeeDepartmentEligibility).filter(
@@ -211,3 +218,55 @@ def delete_leave(leave_id: int, db: Session = Depends(get_db)):
     db.delete(leave)
     db.commit()
     return {"message": "Leave record deleted successfully."}
+
+@router.post("/employees/bulk-delete")
+def bulk_delete_employees(req: BulkDeleteEmployeesRequest, db: Session = Depends(get_db)):
+    if not req.employee_ids:
+        return {"deleted_count": 0, "message": "No employee IDs provided."}
+
+    emps = db.query(Employee).filter(Employee.id.in_(req.employee_ids)).all()
+    count = len(emps)
+    for emp in emps:
+        db.delete(emp)
+    db.commit()
+    return {"deleted_count": count, "message": f"Successfully deleted {count} employee(s)."}
+
+@router.post("/employees/bulk-update")
+def bulk_update_employees(req: BulkUpdateEmployeesRequest, db: Session = Depends(get_db)):
+    if not req.employee_ids:
+        return {"updated_count": 0, "message": "No employee IDs provided."}
+
+    emps = db.query(Employee).filter(Employee.id.in_(req.employee_ids)).all()
+    for emp in emps:
+        if req.primary_department_id is not None:
+            emp.primary_department_id = req.primary_department_id
+
+            # Clear any secondary eligibility for this dept to prevent unique constraint clash
+            db.query(EmployeeDepartmentEligibility).filter(
+                EmployeeDepartmentEligibility.employee_id == emp.id,
+                EmployeeDepartmentEligibility.department_id == req.primary_department_id
+            ).delete()
+
+            home_elig = db.query(EmployeeDepartmentEligibility).filter(
+                EmployeeDepartmentEligibility.employee_id == emp.id,
+                EmployeeDepartmentEligibility.preference_rank == 1
+            ).first()
+            if home_elig:
+                home_elig.department_id = req.primary_department_id
+            else:
+                db.add(EmployeeDepartmentEligibility(
+                    employee_id=emp.id,
+                    department_id=req.primary_department_id,
+                    preference_rank=1,
+                    can_float=False
+                ))
+        if req.max_hours_week is not None:
+            emp.max_hours_week = req.max_hours_week
+        if req.fixed_off_days is not None:
+            emp.fixed_off_days = req.fixed_off_days
+        if req.is_active is not None:
+            emp.is_active = req.is_active
+
+    db.commit()
+    return {"updated_count": len(emps), "message": f"Successfully updated {len(emps)} employee(s)."}
+

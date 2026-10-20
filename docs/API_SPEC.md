@@ -199,6 +199,42 @@
   ```
   - **Response 201 Created:** Returns created employee.
 
+* **`POST /api/employees/bulk-update`**
+  - **Description:** Bulk updates primary department, maximum weekly hours, fixed off days, or active status across multiple employees in a single atomic transaction.
+  - **Request Body:**
+  ```json
+  {
+    "employee_ids": [10, 11, 12],
+    "primary_department_id": 2,
+    "max_hours_week": 36.0,
+    "fixed_off_days": "5,6",
+    "is_active": true
+  }
+  ```
+  - **Response 200 OK:**
+  ```json
+  {
+    "updated_count": 3,
+    "message": "Successfully updated 3 employee(s)."
+  }
+  ```
+
+* **`POST /api/employees/bulk-delete`**
+  - **Description:** Bulk deletes multiple employees and their associated historical records cleanly.
+  - **Request Body:**
+  ```json
+  {
+    "employee_ids": [14, 15]
+  }
+  ```
+  - **Response 200 OK:**
+  ```json
+  {
+    "deleted_count": 2,
+    "message": "Successfully deleted 2 employee(s)."
+  }
+  ```
+
 #### 3.2 Update Floating Eligibility & Department Ranks
 * **`PUT /api/employees/{id}/eligibility`**
   - **Request Body:**
@@ -549,6 +585,40 @@
   {
     "replaced_count": 8,
     "message": "Replaced 8 instance(s) of 'NIGHT' with 'EVE'."
+  }
+  ```
+
+* **`POST /api/roster/{id}/pin-off`**
+  - **Description:** Explicitly pins a specific date for an employee as a locked Day OFF (`DO`) or Compensatory Off (`COFF`). The CP-SAT solver algorithm is strictly constrained to not schedule this worker ($Y_{e, t} = 0$).
+  - **Request Body:**
+  ```json
+  {
+    "employee_id": 10,
+    "date": "2026-11-15",
+    "off_type": "DAY_OFF",
+    "notes": "Pinned Day OFF"
+  }
+  ```
+  - **Response 200 OK:**
+  ```json
+  {
+    "success": true,
+    "employee_id": 10,
+    "date": "2026-11-15",
+    "off_type": "DAY_OFF",
+    "message": "Cell pinned as DAY_OFF for Sarah Connor."
+  }
+  ```
+
+* **`DELETE /api/roster/{id}/clear-all`**
+  - **Description:** Clears all shift assignments and deficits in the roster plan, resetting the grid to a blank canvas ready for re-solving or manual editing.
+  - **Response 200 OK:**
+  ```json
+  {
+    "cleared": true,
+    "deleted_assignments": 180,
+    "deleted_deficits": 4,
+    "message": "Successfully cleared all 180 assignment(s) and 4 deficit(s). Canvas is reset to blank."
   }
   ```
 

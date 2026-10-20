@@ -54,6 +54,7 @@
           <button id="prefill-toggle-btn" class="btn btn-sm">Prefill Mode: OFF</button>
           <button id="variants-btn" class="btn btn-sm">Compare Variants</button>
           <button id="find-replace-btn" class="btn btn-sm" title="Find and replace shift codes or highlight matching cells across grid">🔍 Find & Replace</button>
+          <button id="clear-canvas-btn" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" title="Clear all cell assignments to restart work from a blank canvas">🗑️ Clear Canvas</button>
         </div>
       </div>
       <div class="ribbon-group">
@@ -153,8 +154,11 @@
         <!-- Dynamically rendered conflict message -->
       </div>
       <div id="inspector-actions" class="hidden" style="display: flex; flex-direction: column; gap: 8px;">
-        <button id="inspector-pin-btn" class="btn btn-sm">Pin / Lock Shift 📌</button>
-        <button id="inspector-clear-btn" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">✕ Empty Cell / Day OFF (Del)</button>
+        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-top: 6px;">Cell Status Controls</div>
+        <button id="inspector-empty-btn" class="btn btn-sm" style="background:#f1f5f9;color:#334155;border-color:#cbd5e1;" title="Empty this cell so the CP-SAT solver algorithm fills it">🗑️ Set as Empty (Fillable by Solver)</button>
+        <button id="inspector-dayoff-btn" class="btn btn-sm" style="background:#e2e8f0;color:#1e293b;border-color:#94a3b8;" title="Pin as Day OFF - Solver will strictly NOT schedule this employee">📌 Pin as Day OFF (DO)</button>
+        <button id="inspector-compoff-btn" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border-color:#fde68a;" title="Pin as Compensatory Off - Solver will strictly NOT schedule this employee">☕ Pin as Comp Off (Coff)</button>
+        <button id="inspector-pin-btn" class="btn btn-sm" title="Lock the current assigned shift in place">Pin Current Shift 📌</button>
       </div>
     </aside>
   </div>
@@ -393,11 +397,24 @@
             <input type="hidden" id="emp-form-id" value="">
           </div>
 
+          <!-- Bulk Action Toolbar (appears when 1 or more employees are checked) -->
+          <div id="emps-bulk-toolbar" class="bulk-actions-bar hidden">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span id="emp-selected-count" style="font-weight: 600; color: #1e40af;">0 employees selected</span>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button id="bulk-edit-emps-btn" class="btn btn-sm btn-primary">✏️ Bulk Edit</button>
+              <button id="bulk-delete-emps-btn" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">🗑️ Bulk Delete</button>
+              <button id="bulk-clear-sel-btn" class="btn btn-sm">Deselect All</button>
+            </div>
+          </div>
+
           <!-- Employees List Table -->
           <div style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
             <table class="data-table" id="emps-table">
               <thead>
                 <tr>
+                  <th style="width: 32px; text-align: center;"><input type="checkbox" id="emp-select-all-cb" title="Select / Deselect All"></th>
                   <th>Code</th>
                   <th>Employee Name</th>
                   <th>Primary Department</th>
@@ -892,6 +909,90 @@
       <div class="modal-footer" style="justify-content: space-between;">
         <button id="save-settings-btn" class="btn btn-sm btn-primary">Save Settings</button>
         <button class="btn btn-sm close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Bulk Edit Employees -->
+  <div id="modal-bulk-edit-emps" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 540px;">
+      <div class="modal-header">
+        <span>✏️ Bulk Edit Selected Employees</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        <div id="bulk-edit-summary" style="font-weight: 600; color: #1e40af; margin-bottom: 12px; font-size: 13px;">Updating 0 selected employees</div>
+        
+        <div style="margin-bottom: 12px;">
+          <label class="form-label">Primary Department:</label>
+          <select id="bulk-edit-dept-select" class="select-input" style="width: 100%;">
+            <option value="KEEP">— Keep Existing Department —</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="bulk-edit-hours-cb">
+            Update Max Weekly Hours:
+          </label>
+          <input type="number" id="bulk-edit-hours-input" class="text-input" value="40.0" step="0.5" min="10" max="60" style="width: 100%; margin-top: 4px;" disabled>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label class="form-label">Dedicated Recurring Days Off:</label>
+          <select id="bulk-edit-fixed-preset" class="select-input" style="width: 100%;">
+            <option value="KEEP">— Keep Existing Days Off —</option>
+            <option value="">Dynamic / Flexible (No fixed days off)</option>
+            <option value="5,6">Weekends (Saturday & Sunday)</option>
+            <option value="0,1">Monday & Tuesday</option>
+            <option value="6,0">Sunday & Monday</option>
+            <option value="custom">Custom Days (Select Checkboxes)</option>
+          </select>
+          <div id="bulk-fixed-days-checkboxes" class="hidden" style="display: flex; gap: 8px; font-size: 11px; margin-top: 6px;">
+            <label><input type="checkbox" class="bulk-fixed-cb" value="0"> Mo</label>
+            <label><input type="checkbox" class="bulk-fixed-cb" value="1"> Tu</label>
+            <label><input type="checkbox" class="bulk-fixed-cb" value="2"> We</label>
+            <label><input type="checkbox" class="bulk-fixed-cb" value="3"> Th</label>
+            <label><input type="checkbox" class="bulk-fixed-cb" value="4"> Fr</label>
+            <label><input type="checkbox" class="bulk-fixed-cb" value="5"> Sa</label>
+            <label><input type="checkbox" class="bulk-fixed-cb" value="6"> Su</label>
+          </div>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label class="form-label">Active Status:</label>
+          <select id="bulk-edit-status-select" class="select-input" style="width: 100%;">
+            <option value="KEEP">— Keep Existing Status —</option>
+            <option value="true">Set Active</option>
+            <option value="false">Set Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-sm close-modal">Cancel</button>
+        <button id="apply-bulk-edit-btn" class="btn btn-sm btn-primary">Apply Bulk Updates</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Confirmation for Clear All Cells / Reset Canvas -->
+  <div id="modal-confirm-clear-canvas" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header" style="background:#fee2e2;color:#991b1b;">
+        <span>🗑️ Clear All Cells & Reset Canvas?</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        <p style="font-size: 13px; line-height: 1.5; color: var(--text-main);">
+          Are you sure you want to clear <b>all assigned shifts and deficits</b> from the active roster plan?
+        </p>
+        <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.4;">
+          This will reset the schedule to a blank canvas so you can start over manually or re-run the CP-SAT solver. Your employee list, department requirements, and approved vacations will remain safely preserved.
+        </p>
+      </div>
+      <div class="modal-footer" style="justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-sm close-modal">Cancel</button>
+        <button id="confirm-clear-canvas-btn" class="btn btn-sm" style="background:#dc2626;color:#ffffff;border:none;">Yes, Clear All Cells</button>
       </div>
     </div>
   </div>

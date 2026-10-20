@@ -166,3 +166,30 @@ def test_crawler_executes_all_button_backend_endpoints(client, sample_scenario):
     # 12. Preceding Month Summary (toggle-prev-month-btn)
     prev_res = client.get("/api/roster/previous-month-summary?year=2026&month=11")
     assert prev_res.status_code == 200
+
+    # 13. Distinct Cell Actions: Pin Day OFF & Comp Off (inspector-dayoff-btn & inspector-compoff-btn)
+    p_off = client.post(f"/api/roster/{plan_id}/pin-off", json={
+        "employee_id": 1,
+        "date": "2026-11-05",
+        "off_type": "DAY_OFF"
+    })
+    assert p_off.status_code == 200
+    p_coff = client.post(f"/api/roster/{plan_id}/pin-off", json={
+        "employee_id": 1,
+        "date": "2026-11-06",
+        "off_type": "COFF"
+    })
+    assert p_coff.status_code == 200
+
+    # 14. Bulk Employee Update & Delete (bulk-edit-emps-btn & bulk-delete-emps-btn)
+    b_upd = client.post("/api/employees/bulk-update", json={
+        "employee_ids": [1],
+        "max_hours_week": 38.0
+    })
+    assert b_upd.status_code == 200
+
+    # 15. Clear All Canvas / Reset (clear-canvas-btn)
+    clear_canvas_res = client.delete(f"/api/roster/{plan_id}/clear-all")
+    assert clear_canvas_res.status_code == 200
+    assert clear_canvas_res.json()["cleared"] is True
+

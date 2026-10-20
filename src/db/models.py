@@ -154,7 +154,7 @@ class LeaveRecord(Base):
     employee = relationship("Employee", back_populates="leaves")
 
     __table_args__ = (
-        CheckConstraint("leave_type IN ('VACATION', 'SICK', 'TRAINING', 'UNPAID', 'OTHER')", name="ck_leave_type"),
+        CheckConstraint("leave_type IN ('VACATION', 'SICK', 'TRAINING', 'UNPAID', 'OTHER', 'DAY_OFF', 'COFF')", name="ck_leave_type"),
         CheckConstraint("status IN ('PENDING', 'APPROVED', 'CANCELLED')", name="ck_leave_status"),
         CheckConstraint("end_date >= start_date", name="ck_leave_dates"),
         Index("idx_leave_dates", "employee_id", "start_date", "end_date"),

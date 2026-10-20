@@ -25,6 +25,9 @@ This report documents the verification, bug discovery and remediation, performan
 | **BUG-04** | **Type Annotations** | `src/services/roster_service.py` referenced `Tuple` and `Set` in function signatures without importing them from `typing`, triggering `NameError`. | Added `Tuple` and `Set` to the `typing` import declaration. | **RESOLVED** |
 | **BUG-05** | **Test Concurrency** | Standard in-memory SQLite (`sqlite:///:memory:`) creates separate isolated databases per connection, causing `OperationalError: no such table: employees` during multi-threaded FastAPI tests. | Configured `StaticPool` on the test engine in `tests/conftest.py` to maintain connection persistence across HTTP test requests. | **RESOLVED** |
 | **BUG-06** | **UI Button Wiring & DOM IDs** | Automated element crawler revealed duplicate element IDs (`prefill-toggle-btn`, `solve-remaining-btn`), unwired Inspector action buttons (`inspector-pin-btn`, `inspector-clear-btn`), and unhandled direct file import pipeline. | Disambiguated sidebar IDs (`sidebar-prefill-btn`, `sidebar-solve-btn`), bound inspector pin/clear endpoints to backend routes, implemented CSV preview/commit handlers, and converted top bar to an Excel Ribbon. | **RESOLVED** |
+| **BUG-07** | **Database Schema Check Constraint** | `leave_records.ck_leave_type` only permitted `('VACATION', 'SICK', 'TRAINING', 'UNPAID', 'OTHER')`, preventing distinct single-day pinned Day OFF (`DAY_OFF`) and Comp Off (`COFF`) locks from persisting. | Updated table constraint to include `'DAY_OFF'` and `'COFF'`, and implemented backward-compatible fallback storing `leave_type="OTHER"` with descriptive off-type notes for legacy schemas. | **RESOLVED** |
+| **BUG-08** | **Eligibility Unique Constraint** | Bulk-updating primary department triggered `UNIQUE constraint failed: employee_department_eligibility` when the target employee already had a secondary floater eligibility for that department. | Automatically purged secondary floater eligibility for the target department before assigning primary rank 1 eligibility. | **RESOLVED** |
+| **BUG-09** | **Cell Action Ambiguity** | UI had only one button (`Clear / Day OFF`), confusing whether the cell should be empty for the CP-SAT solver to fill or pinned as an explicit non-working day. | Separated into 3 explicit Inspector actions: `Set as Empty (Fillable by Solver)`, `Pin as Day OFF (DO)`, and `Pin as Comp Off (Coff)`. | **RESOLVED** |
 
 ---
 
@@ -36,27 +39,37 @@ The automated test suite was executed across all layers using `pytest`:
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.7.0
 rootdir: C:\Users\HEllo\Roster_planner
-collected 19 items
+collected 26 items
 
-tests/api/test_adv_features.py::test_dedicated_regular_days_off_enforcement PASSED [  5%]
-tests/api/test_adv_features.py::test_vacation_leave_crud_and_grid_representation PASSED [ 10%]
-tests/api/test_adv_features.py::test_find_and_replace_shift_codes PASSED [ 15%]
-tests/api/test_adv_features.py::test_system_settings_and_shift_customization PASSED [ 21%]
-tests/api/test_api_roster.py::test_full_roster_generation_and_export_lifecycle PASSED [ 26%]
-tests/api/test_crud_and_carryover.py::test_department_crud_and_color_customization PASSED [ 31%]
-tests/api/test_crud_and_carryover.py::test_employee_crud_lifecycle PASSED [ 36%]
-tests/api/test_crud_and_carryover.py::test_previous_month_carryover_and_trailing_shifts PASSED [ 42%]
-tests/api/test_mcp_tools.py::test_mcp_tools_and_execution PASSED         [ 47%]
-tests/solver/test_floating_absorption.py::test_vacation_absorption_via_floating PASSED [ 52%]
-tests/solver/test_rest_ergonomics.py::test_ergonomic_rest_and_rotation_invariants PASSED [ 57%]
-tests/solver/test_shortage_deficit.py::test_extreme_workforce_starvation PASSED [ 63%]
-tests/ui/test_ui_interactive_crawler.py::test_audit_all_buttons_bound_in_app_js PASSED [ 68%]
-tests/ui/test_ui_interactive_crawler.py::test_crawler_executes_all_button_backend_endpoints PASSED [ 73%]
-tests/unit/test_import.py::test_template_generation PASSED               [ 78%]
-tests/unit/test_import.py::test_csv_validation_duplicate_code PASSED     [ 84%]
-tests/unit/test_rules.py::test_forbidden_transition_night_to_morning PASSED [ 89%]
-tests/unit/test_rules.py::test_permitted_transition_morning_to_night PASSED [ 94%]
+tests/api/test_adv_features.py::test_dedicated_regular_days_off_enforcement PASSED [  3%]
+tests/api/test_adv_features.py::test_vacation_leave_crud_and_grid_representation PASSED [  7%]
+tests/api/test_adv_features.py::test_find_and_replace_shift_codes PASSED [ 11%]
+tests/api/test_adv_features.py::test_system_settings_and_shift_customization PASSED [ 15%]
+tests/api/test_api_roster.py::test_full_roster_generation_and_export_lifecycle PASSED [ 19%]
+tests/api/test_bulk_and_canvas.py::test_bulk_update_employees PASSED     [ 23%]
+tests/api/test_bulk_and_canvas.py::test_bulk_delete_employees PASSED     [ 26%]
+tests/api/test_bulk_and_canvas.py::test_clear_all_canvas_and_reset PASSED [ 30%]
+tests/api/test_bulk_and_canvas.py::test_distinct_cell_actions_empty_vs_dayoff_vs_compoff PASSED [ 34%]
+tests/api/test_bulk_and_canvas.py::test_planner_generation_and_solve_remaining_edge_cases PASSED [ 38%]
+tests/api/test_bulk_and_canvas.py::test_pinned_shift_overrides_fixed_off_day PASSED [ 42%]
+tests/api/test_bulk_and_canvas.py::test_empty_cell_after_clearing_pinned_off PASSED [ 46%]
+tests/api/test_crud_and_carryover.py::test_department_crud_and_color_customization PASSED [ 50%]
+tests/api/test_crud_and_carryover.py::test_employee_crud_lifecycle PASSED [ 53%]
+tests/api/test_crud_and_carryover.py::test_previous_month_carryover_and_trailing_shifts PASSED [ 57%]
+tests/api/test_mcp_tools.py::test_mcp_tools_and_execution PASSED         [ 61%]
+tests/solver/test_floating_absorption.py::test_vacation_absorption_via_floating PASSED [ 65%]
+tests/solver/test_rest_ergonomics.py::test_ergonomic_rest_and_rotation_invariants PASSED [ 69%]
+tests/solver/test_shortage_deficit.py::test_extreme_workforce_starvation PASSED [ 73%]
+tests/ui/test_ui_interactive_crawler.py::test_audit_all_buttons_bound_in_app_js PASSED [ 76%]
+tests/ui/test_ui_interactive_crawler.py::test_crawler_executes_all_button_backend_endpoints PASSED [ 80%]
+tests/unit/test_import.py::test_template_generation PASSED               [ 84%]
+tests/unit/test_import.py::test_csv_validation_duplicate_code PASSED     [ 88%]
+tests/unit/test_rules.py::test_forbidden_transition_night_to_morning PASSED [ 92%]
+tests/unit/test_rules.py::test_permitted_transition_morning_to_night PASSED [ 96%]
 tests/unit/test_rules.py::test_consecutive_days_violation PASSED         [100%]
+
+===================== 26 passed in 15.05s ======================
+```
 
 ====================== 19 passed, 0 failures in 15.13s ======================
 ```

@@ -8,7 +8,8 @@ from src.db.session import get_db
 from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Department, ShiftType, Employee, LeaveRecord
 from src.api.schemas import (
     GenerateRosterRequest, ValidateAssignmentRequest,
-    ManualAssignmentRequest, PrefillShiftsRequest, FindReplaceRequest
+    ManualAssignmentRequest, PrefillShiftsRequest, FindReplaceRequest,
+    PinOffRequest
 )
 from src.services.roster_service import (
     generate_roster_plan, solve_remaining_blank_slots,
@@ -366,21 +367,41 @@ def get_plan_schedule(
                     consecutive_work_days = 0
                     prev_shift = None
                     l = leave_by_emp_date[(emp.id, d)]
+                    ltype = (l.leave_type or "").upper()
+                    lnotes = (l.notes or "").upper()
+                    is_coff = ltype in ["COFF", "COMP_OFF"] or (ltype == "OTHER" and "COFF" in lnotes)
+                    is_day_off = ltype in ["DAY_OFF", "DO"] or (ltype == "OTHER" and any(k in lnotes for k in ["DAY_OFF", "DAY OFF"]))
+
+                    if is_coff:
+                        sc_code = "COFF"
+                        sc_name = l.notes or "Compensatory Off (Coff 📌)"
+                        dept_col = "#D97706"
+                    elif is_day_off:
+                        sc_code = "DO"
+                        sc_name = l.notes or "Day OFF (Locked 📌)"
+                        dept_col = "#64748B"
+                    else:
+                        sc_code = "VAC" if ltype == "VACATION" else (l.leave_type or "LEAVE")
+                        sc_name = l.notes or l.leave_type
+                        dept_col = "#8B5CF6"
+
                     emp_assigns[d.isoformat()] = {
                         "assignment_id": None,
                         "shift_id": None,
-                        "shift_code": "VAC" if l.leave_type == "VACATION" else (l.leave_type or "LEAVE"),
-                        "shift_name": l.notes or l.leave_type,
+                        "shift_code": sc_code,
+                        "shift_name": sc_name,
                         "department_id": None,
                         "department_code": "",
-                        "department_color": "#8B5CF6",
+                        "department_color": dept_col,
                         "is_floating": False,
                         "float_rank": 1,
                         "is_pinned": True,
                         "is_manual_override": False,
                         "has_conflict": False,
                         "conflict_reason": None,
-                        "is_leave": True,
+                        "is_leave": not (is_coff or is_day_off),
+                        "is_day_off": is_day_off,
+                        "is_comp_off": is_coff,
                         "leave_type": l.leave_type,
                         "is_fixed_off": False
                     }
@@ -584,11 +605,118 @@ def remove_assignment(
         RosterAssignment.date == date
     ).first()
 
+    cleared = False
     if existing:
         db.delete(existing)
+        cleared = True
+
+    # Also remove any 1-day DAY_OFF or COFF leave record so the cell becomes genuinely EMPTY/fillable by the solver
+    leaves = db.query(LeaveRecord).filter(
+        LeaveRecord.employee_id == employee_id,
+        LeaveRecord.start_date == date,
+        LeaveRecord.end_date == date
+    ).all()
+    for l in leaves:
+        ltype = (l.leave_type or "").upper()
+        lnotes = (l.notes or "").upper()
+        if ltype in ["DAY_OFF", "DO", "COFF", "COMP_OFF"] or (ltype == "OTHER" and any(k in lnotes for k in ["DAY_OFF", "DAY OFF", "COFF", "COMP_OFF"])):
+            db.delete(l)
+            cleared = True
+
+    db.commit()
+    return {"message": "Cell cleared and set as empty (fillable by solver).", "cleared": cleared}
+
+@router.post("/{plan_id}/pin-off")
+def pin_day_off(plan_id: int, req: PinOffRequest, db: Session = Depends(get_db)):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    emp = db.query(Employee).filter(Employee.id == req.employee_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    # Remove any existing RosterAssignment for this employee on this date
+    db.query(RosterAssignment).filter(
+        RosterAssignment.plan_id == plan_id,
+        RosterAssignment.employee_id == req.employee_id,
+        RosterAssignment.date == req.date
+    ).delete()
+
+    normalized_type = "COFF" if req.off_type.upper() in ["COFF", "COMP_OFF"] else "DAY_OFF"
+    notes_val = req.notes or ("Compensatory Off" if normalized_type == "COFF" else "Pinned Day OFF")
+
+    # Update or insert 1-day LeaveRecord
+    existing_leave = db.query(LeaveRecord).filter(
+        LeaveRecord.employee_id == req.employee_id,
+        LeaveRecord.start_date == req.date,
+        LeaveRecord.end_date == req.date
+    ).first()
+
+    try:
+        if existing_leave:
+            existing_leave.leave_type = normalized_type
+            existing_leave.status = "APPROVED"
+            existing_leave.notes = notes_val
+        else:
+            new_leave = LeaveRecord(
+                employee_id=req.employee_id,
+                start_date=req.date,
+                end_date=req.date,
+                leave_type=normalized_type,
+                status="APPROVED",
+                notes=notes_val
+            )
+            db.add(new_leave)
         db.commit()
-        return {"message": "Assignment cleared (set as OFF).", "cleared": True}
-    return {"message": "No assignment existed on this date.", "cleared": False}
+    except Exception:
+        db.rollback()
+        # Fallback to OTHER with notes indicating off type for older check constraints
+        if existing_leave:
+            existing_leave.leave_type = "OTHER"
+            existing_leave.status = "APPROVED"
+            existing_leave.notes = normalized_type
+        else:
+            new_leave = LeaveRecord(
+                employee_id=req.employee_id,
+                start_date=req.date,
+                end_date=req.date,
+                leave_type="OTHER",
+                status="APPROVED",
+                notes=normalized_type
+            )
+            db.add(new_leave)
+        db.commit()
+
+    return {
+        "success": True,
+        "employee_id": req.employee_id,
+        "date": req.date.isoformat(),
+        "off_type": normalized_type,
+        "message": f"Cell pinned as {normalized_type} for {emp.name}."
+    }
+
+@router.delete("/{plan_id}/clear-all")
+@router.post("/{plan_id}/clear-all")
+def clear_all_assignments(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    deleted_assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).delete()
+    deleted_deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).delete()
+    plan.status = "DRAFT"
+    plan.solver_status = "RESET"
+    plan.total_deficits = 0
+    plan.total_floats = 0
+    db.commit()
+    return {
+        "cleared": True,
+        "deleted_assignments": deleted_assignments,
+        "deleted_deficits": deleted_deficits,
+        "message": f"Successfully cleared all {deleted_assignments} assignment(s) and {deleted_deficits} deficit(s). Canvas is reset to blank."
+    }
+
 
 @router.post("/{plan_id}/assignments/toggle-pin")
 def toggle_pin_assignment(

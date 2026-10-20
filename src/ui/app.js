@@ -342,7 +342,17 @@ function renderStaffCentric(data) {
         const badge = document.createElement("span");
         let shiftClass = "shift-off";
 
-        if (a.is_leave) {
+        if (a.is_comp_off || a.shift_code === "COFF") {
+          shiftClass = "shift-coff";
+          badge.className = `shift-badge ${shiftClass}`;
+          badge.innerHTML = `☕ ${a.shift_code || "COFF"}`;
+          badge.title = `Pinned Compensatory Off: ${a.shift_name || "Coff 📌"}`;
+        } else if (a.is_day_off || a.shift_code === "DO") {
+          shiftClass = "shift-do";
+          badge.className = `shift-badge ${shiftClass}`;
+          badge.innerHTML = `📌 ${a.shift_code || "DO"}`;
+          badge.title = `Pinned Day OFF (Locked): ${a.shift_name || "Day OFF"}`;
+        } else if (a.is_leave) {
           shiftClass = "shift-vac";
           badge.className = `shift-badge ${shiftClass}`;
           badge.innerHTML = `🏖️ ${a.shift_code || "VAC"}`;
@@ -571,10 +581,16 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
   deptSelectorHtml += `</select>`;
 
   let statusHtml = "";
-  if (currentAssignment && currentAssignment.is_leave) {
+  if (currentAssignment && currentAssignment.is_comp_off) {
+    statusHtml = `<div class="brand-badge" style="background:#fef3c7;color:#92400e;margin-top:6px;display:inline-block;">☕ Pinned Comp Off: ${currentAssignment.shift_name}</div>`;
+  } else if (currentAssignment && currentAssignment.is_day_off) {
+    statusHtml = `<div class="brand-badge" style="background:#e2e8f0;color:#1e293b;margin-top:6px;display:inline-block;">📌 Pinned Day OFF (Locked)</div>`;
+  } else if (currentAssignment && currentAssignment.is_leave) {
     statusHtml = `<div class="brand-badge" style="background:#f3e8ff;color:#6b21a8;margin-top:6px;display:inline-block;">Approved Leave: ${currentAssignment.shift_name}</div>`;
   } else if (currentAssignment && currentAssignment.is_fixed_off) {
     statusHtml = `<div class="brand-badge" style="background:#f1f5f9;color:#475569;margin-top:6px;display:inline-block;">Dedicated Regular Day Off</div>`;
+  } else if (!currentAssignment || !currentAssignment.shift_id) {
+    statusHtml = `<div class="brand-badge" style="background:#f8fafc;color:#64748b;margin-top:6px;display:inline-block;border:1px dashed #cbd5e1;">Empty Cell (Fillable by Solver)</div>`;
   }
 
   content.innerHTML = `
@@ -639,11 +655,46 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
     }
   };
 
-  // Wire Inspector Pin & Clear buttons
+  // Wire Inspector Status Action buttons
+  const emptyBtn = document.getElementById("inspector-empty-btn");
+  if (emptyBtn) {
+    emptyBtn.onclick = async () => {
+      await emptySelectedCell();
+    };
+  }
+
+  const dayOffBtn = document.getElementById("inspector-dayoff-btn");
+  if (dayOffBtn) {
+    dayOffBtn.onclick = async () => {
+      await apiPost(`/api/roster/${state.activePlanId}/pin-off`, {
+        employee_id: emp.employee_id,
+        date: dateStr,
+        off_type: "DAY_OFF"
+      });
+      await loadSchedule();
+      const updatedAssign = { shift_code: "DO", is_day_off: true, is_pinned: true, shift_name: "Day OFF (Locked 📌)" };
+      selectAssignment(emp, dateStr, updatedAssign, rowIdx, colIdx, td);
+    };
+  }
+
+  const compOffBtn = document.getElementById("inspector-compoff-btn");
+  if (compOffBtn) {
+    compOffBtn.onclick = async () => {
+      await apiPost(`/api/roster/${state.activePlanId}/pin-off`, {
+        employee_id: emp.employee_id,
+        date: dateStr,
+        off_type: "COFF"
+      });
+      await loadSchedule();
+      const updatedAssign = { shift_code: "COFF", is_comp_off: true, is_pinned: true, shift_name: "Compensatory Off (Coff 📌)" };
+      selectAssignment(emp, dateStr, updatedAssign, rowIdx, colIdx, td);
+    };
+  }
+
   const pinBtn = document.getElementById("inspector-pin-btn");
   if (pinBtn) {
     const isPinned = currentAssignment && currentAssignment.is_pinned;
-    pinBtn.textContent = isPinned ? "Unpin Shift 🔓" : "Pin / Lock Shift 📌";
+    pinBtn.textContent = isPinned ? "Unpin Shift 🔓" : "Pin Current Shift 📌";
     pinBtn.className = `btn btn-sm ${isPinned ? "btn-primary" : ""}`;
     pinBtn.onclick = async () => {
       if (!currentAssignment || !currentAssignment.assignment_id) {
@@ -653,14 +704,6 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
       const res = await apiPost(`/api/roster/${state.activePlanId}/assignments/toggle-pin?employee_id=${emp.employee_id}&date=${dateStr}`, {});
       await loadSchedule();
       selectAssignment(emp, dateStr, { ...currentAssignment, is_pinned: res.is_pinned }, rowIdx, colIdx, td);
-    };
-  }
-
-  const clearBtn = document.getElementById("inspector-clear-btn");
-  if (clearBtn) {
-    clearBtn.disabled = !currentAssignment || !currentAssignment.assignment_id;
-    clearBtn.onclick = async () => {
-      await emptySelectedCell();
     };
   }
 }
@@ -760,6 +803,7 @@ async function loadOrgEmployees() {
   const emps = await apiGet(url);
   document.getElementById("org-emp-count").textContent = emps.length;
 
+  state.selectedEmpIds = state.selectedEmpIds || new Set();
   const tbody = document.getElementById("emps-table-body");
   tbody.innerHTML = "";
 
@@ -778,8 +822,12 @@ async function loadOrgEmployees() {
       }
     }
 
+    const isChecked = state.selectedEmpIds.has(e.id);
     const tr = document.createElement("tr");
     tr.innerHTML = `
+      <td style="text-align:center;">
+        <input type="checkbox" class="emp-row-cb" data-id="${e.id}" ${isChecked ? "checked" : ""}>
+      </td>
       <td><b>${e.employee_code}</b></td>
       <td>${e.name}</td>
       <td><span class="dept-badge-tag" style="background:${dColor};">${dCode}</span> ${e.primary_department_name || ''}</td>
@@ -791,8 +839,58 @@ async function loadOrgEmployees() {
         <button class="btn btn-sm" style="color:#dc2626;" onclick='deleteEmployee(${e.id}, "${e.name.replace(/"/g, '&quot;')}")'>Delete</button>
       </td>
     `;
+
+    const rowCb = tr.querySelector(".emp-row-cb");
+    if (rowCb) {
+      rowCb.onchange = (evt) => {
+        if (evt.target.checked) {
+          state.selectedEmpIds.add(e.id);
+        } else {
+          state.selectedEmpIds.delete(e.id);
+        }
+        updateEmpBulkToolbar(emps);
+      };
+    }
+
     tbody.appendChild(tr);
   });
+
+  const selectAllCb = document.getElementById("emp-select-all-cb");
+  if (selectAllCb) {
+    selectAllCb.checked = emps.length > 0 && emps.every(e => state.selectedEmpIds.has(e.id));
+    selectAllCb.indeterminate = emps.some(e => state.selectedEmpIds.has(e.id)) && !selectAllCb.checked;
+    selectAllCb.onchange = (evt) => {
+      if (evt.target.checked) {
+        emps.forEach(e => state.selectedEmpIds.add(e.id));
+      } else {
+        emps.forEach(e => state.selectedEmpIds.delete(e.id));
+      }
+      loadOrgEmployees();
+    };
+  }
+
+  updateEmpBulkToolbar(emps);
+}
+
+function updateEmpBulkToolbar(emps = []) {
+  const toolbar = document.getElementById("emps-bulk-toolbar");
+  const countSpan = document.getElementById("emp-selected-count");
+  const selectAllCb = document.getElementById("emp-select-all-cb");
+  const count = state.selectedEmpIds ? state.selectedEmpIds.size : 0;
+
+  if (toolbar) {
+    if (count > 0) {
+      toolbar.classList.remove("hidden");
+      if (countSpan) countSpan.textContent = `${count} employee${count === 1 ? "" : "s"} selected`;
+    } else {
+      toolbar.classList.add("hidden");
+    }
+  }
+
+  if (selectAllCb && emps.length > 0) {
+    selectAllCb.checked = emps.every(e => state.selectedEmpIds.has(e.id));
+    selectAllCb.indeterminate = emps.some(e => state.selectedEmpIds.has(e.id)) && !selectAllCb.checked;
+  }
 }
 
 window.editEmployee = function(e) {
@@ -1403,7 +1501,154 @@ function setupEventListeners() {
   const empFilterDept = document.getElementById("emp-filter-dept-select");
   if (empFilterDept) {
     empFilterDept.onchange = () => {
+      if (state.selectedEmpIds) state.selectedEmpIds.clear();
       loadOrgEmployees();
+    };
+  }
+
+  // Bulk Employee Action Buttons
+  const bulkClearSelBtn = document.getElementById("bulk-clear-sel-btn");
+  if (bulkClearSelBtn) {
+    bulkClearSelBtn.onclick = () => {
+      if (state.selectedEmpIds) state.selectedEmpIds.clear();
+      loadOrgEmployees();
+    };
+  }
+
+  const bulkDeleteEmpsBtn = document.getElementById("bulk-delete-emps-btn");
+  if (bulkDeleteEmpsBtn) {
+    bulkDeleteEmpsBtn.onclick = async () => {
+      const count = state.selectedEmpIds ? state.selectedEmpIds.size : 0;
+      if (!count) return;
+      if (!confirm(`Are you sure you want to permanently delete ${count} selected employee(s)? This cannot be undone.`)) return;
+      try {
+        const res = await apiPost("/api/employees/bulk-delete", { employee_ids: Array.from(state.selectedEmpIds) });
+        alert(res.message || `Deleted ${count} employees.`);
+        state.selectedEmpIds.clear();
+        await loadOrgEmployees();
+        await loadOrgDepartments();
+        await loadSchedule();
+      } catch (err) {
+        alert("Bulk delete failed: " + err.message);
+      }
+    };
+  }
+
+  const bulkEditEmpsBtn = document.getElementById("bulk-edit-emps-btn");
+  if (bulkEditEmpsBtn) {
+    bulkEditEmpsBtn.onclick = () => {
+      const count = state.selectedEmpIds ? state.selectedEmpIds.size : 0;
+      if (!count) return;
+      document.getElementById("bulk-edit-summary").textContent = `Updating ${count} selected employee${count === 1 ? "" : "s"}`;
+
+      const deptSelect = document.getElementById("bulk-edit-dept-select");
+      deptSelect.innerHTML = `<option value="KEEP">— Keep Existing Department —</option>`;
+      state.departments.forEach(d => {
+        deptSelect.innerHTML += `<option value="${d.id}">${d.name} (${d.code})</option>`;
+      });
+
+      document.getElementById("bulk-edit-hours-cb").checked = false;
+      document.getElementById("bulk-edit-hours-input").disabled = true;
+      document.getElementById("bulk-edit-hours-input").value = "40.0";
+      document.getElementById("bulk-edit-fixed-preset").value = "KEEP";
+      document.getElementById("bulk-fixed-days-checkboxes").classList.add("hidden");
+      document.querySelectorAll(".bulk-fixed-cb").forEach(c => c.checked = false);
+      document.getElementById("bulk-edit-status-select").value = "KEEP";
+
+      document.getElementById("modal-bulk-edit-emps").classList.remove("hidden");
+    };
+  }
+
+  const bulkEditHoursCb = document.getElementById("bulk-edit-hours-cb");
+  if (bulkEditHoursCb) {
+    bulkEditHoursCb.onchange = (e) => {
+      const hoursIn = document.getElementById("bulk-edit-hours-input");
+      if (hoursIn) hoursIn.disabled = !e.target.checked;
+    };
+  }
+
+  const bulkEditFixedPreset = document.getElementById("bulk-edit-fixed-preset");
+  if (bulkEditFixedPreset) {
+    bulkEditFixedPreset.onchange = (e) => {
+      const customBox = document.getElementById("bulk-fixed-days-checkboxes");
+      if (customBox) {
+        if (e.target.value === "custom") customBox.classList.remove("hidden");
+        else customBox.classList.add("hidden");
+      }
+    };
+  }
+
+  const applyBulkEditBtn = document.getElementById("apply-bulk-edit-btn");
+  if (applyBulkEditBtn) {
+    applyBulkEditBtn.onclick = async () => {
+      const count = state.selectedEmpIds ? state.selectedEmpIds.size : 0;
+      if (!count) return;
+
+      const payload = {
+        employee_ids: Array.from(state.selectedEmpIds)
+      };
+
+      const deptVal = document.getElementById("bulk-edit-dept-select").value;
+      if (deptVal !== "KEEP") payload.primary_department_id = parseInt(deptVal);
+
+      if (document.getElementById("bulk-edit-hours-cb").checked) {
+        payload.max_hours_week = parseFloat(document.getElementById("bulk-edit-hours-input").value) || 40.0;
+      }
+
+      const presetVal = document.getElementById("bulk-edit-fixed-preset").value;
+      if (presetVal !== "KEEP") {
+        if (presetVal === "custom") {
+          const customDays = Array.from(document.querySelectorAll(".bulk-fixed-cb:checked")).map(cb => cb.value);
+          payload.fixed_off_days = customDays.join(",");
+        } else {
+          payload.fixed_off_days = presetVal;
+        }
+      }
+
+      const statusVal = document.getElementById("bulk-edit-status-select").value;
+      if (statusVal !== "KEEP") {
+        payload.is_active = statusVal === "true";
+      }
+
+      try {
+        const res = await apiPost("/api/employees/bulk-update", payload);
+        alert(res.message || "Employees updated successfully.");
+        document.getElementById("modal-bulk-edit-emps").classList.add("hidden");
+        state.selectedEmpIds.clear();
+        await loadOrgEmployees();
+        await loadOrgDepartments();
+        await loadSchedule();
+      } catch (err) {
+        alert("Bulk update failed: " + err.message);
+      }
+    };
+  }
+
+  // Clear Canvas / Reset Ribbon Action
+  const clearCanvasBtn = document.getElementById("clear-canvas-btn");
+  if (clearCanvasBtn) {
+    clearCanvasBtn.onclick = () => {
+      if (!state.activePlanId) {
+        alert("Please create or select a roster plan first.");
+        return;
+      }
+      document.getElementById("modal-confirm-clear-canvas").classList.remove("hidden");
+    };
+  }
+
+  const confirmClearCanvasBtn = document.getElementById("confirm-clear-canvas-btn");
+  if (confirmClearCanvasBtn) {
+    confirmClearCanvasBtn.onclick = async () => {
+      if (!state.activePlanId) return;
+      try {
+        const res = await apiDelete(`/api/roster/${state.activePlanId}/clear-all`);
+        document.getElementById("modal-confirm-clear-canvas").classList.add("hidden");
+        alert(res.message || "Canvas reset to blank.");
+        await loadSchedule();
+        await loadPlans();
+      } catch (err) {
+        alert("Clear canvas failed: " + err.message);
+      }
     };
   }
 

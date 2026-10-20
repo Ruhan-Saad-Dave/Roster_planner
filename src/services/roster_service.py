@@ -85,6 +85,11 @@ def build_context_from_db(
             except Exception:
                 pass
 
+    # Pinned work shifts take precedence over off-locks
+    for (emp_id, t) in (pinned_assignments or {}).keys():
+        approved_leaves.discard((emp_id, t))
+        combined_pinned_offs.discard((emp_id, t))
+
     return SchedulingContext(
         employees=employees,
         departments=departments,

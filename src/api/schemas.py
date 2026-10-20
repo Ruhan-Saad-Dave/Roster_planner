@@ -178,3 +178,20 @@ class FindReplaceRequest(BaseModel):
 class SystemSettingsUpdate(BaseModel):
     settings: Dict[str, str]
 
+# Bulk Employee Operations
+class BulkDeleteEmployeesRequest(BaseModel):
+    employee_ids: List[int]
+
+class BulkUpdateEmployeesRequest(BaseModel):
+    employee_ids: List[int]
+    primary_department_id: Optional[int] = None
+    max_hours_week: Optional[float] = None
+    fixed_off_days: Optional[str] = None
+    is_active: Optional[bool] = None
+
+class PinOffRequest(BaseModel):
+    employee_id: int
+    date: date
+    off_type: str = "DAY_OFF"  # "DAY_OFF", "DO", "COFF", "COMP_OFF"
+    notes: Optional[str] = None
+

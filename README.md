@@ -3,7 +3,7 @@
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![Optimization: Google OR-Tools CP-SAT](https://img.shields.io/badge/Optimization-OR--Tools%20CP--SAT-green.svg)](https://developers.google.com/optimization)
 [![Architecture: Standalone Offline](https://img.shields.io/badge/Architecture-100%25%20Offline-success.svg)](#)
-[![Test Coverage: 19/19 Passed](https://img.shields.io/badge/Tests-19%2F19%20Passing-brightgreen.svg)](#)
+[![Test Coverage: 26/26 Passed](https://img.shields.io/badge/Tests-26%2F26%20Passing-brightgreen.svg)](#)
 
 **LocalRoster v2** is a production-grade, mathematically optimal, 100% offline workforce roster scheduling and management system. Built specifically for high-stakes operational environments (such as hospitals, clinics, emergency services, and 24/7 facilities), it pairs Google OR-Tools CP-SAT constraint programming with an Excel-inspired desktop interface that runs entirely on local machines without cloud dependencies or CDN calls.
 
@@ -23,9 +23,13 @@
 * **Active Working Cell & Crosshairs:** Clicking any cell highlights it with a radiant blue selection ring and highlights the active employee row and calendar date column for effortless tracking across 30 days.
 * **Visual Conflict Indicators:** Highlights hazardous shift rotations (e.g., Night to Morning turnarounds) and consecutive day streaks with pulsing red `⚠️` conflict badges and explanatory tooltips.
 * **Empty Cell Recognition:** Unstaffed/blank slots feature distinct subtle dashed borders so managers instantly spot scheduling gaps.
-* **Native Keyboard Navigation & Cell Clearing:**
-  - Press `Delete` or `Backspace` to instantly empty a selected cell / set to Day OFF.
+* **Native Keyboard Navigation & Distinct Cell States:**
+  - Distinct Inspector controls: **`🗑️ Set as Empty (Fillable by Solver)`**, **`📌 Pin as Day OFF (DO)`**, and **`☕ Pin as Comp Off (Coff)`**.
+  - Empty cells are designated fillable slots where CP-SAT will assign needed shifts. Pinned Day OFFs and Comp Offs enforce hard non-working locks ($Y_{e, t} = 0$).
+  - Press `Delete` or `Backspace` to instantly empty a selected cell.
   - Navigate effortlessly using `Arrow Keys` (`←`, `→`, `↑`, `↓`), `Tab` / `Shift+Tab`, and `Enter` / `Shift+Enter` just like Excel!
+* **Reset Canvas / Clear All Cells:**
+  - One-click ribbon action (**`🗑️ Clear Canvas`**) to reset all assignments and deficits to a clean blank slate, ready for manual painting or re-solving.
 * **Find and Replace Engine:** Search shift codes across the whole roster or filtered by department. Use **Highlight All Matches** for bright animated yellow search highlights, or **Replace All** to substitute shifts across the plan.
 * **Hero Generate Flow with Mode Choice & Engaging AI Progress:**
   - Prominent **⚡ + Generate Roster** call-to-action button.
@@ -33,6 +37,10 @@
   - Engaging solver progress modal: animated progress bar (0% to 100%), elapsed timer, and live status messages (*"Formulating integer variables...", "Validating ergonomic rest intervals...", "Locking approved vacations...", "Balancing weekend equity...", "Finalizing conflict-free roster..."*).
 
 ### 3. Customizable Organization & Advanced Settings
+* **Staff Directory Multi-Select & Bulk Operations:**
+  - Fast multi-selection with "Select All" checkbox header.
+  - Bulk Edit modal to simultaneously update Primary Department, Max Weekly Hours, Dedicated Recurring Days Off, and Active Status.
+  - Bulk Delete action with confirmation safety check.
 * **Custom Shift & Absence Terminology:** Customize codes in Advanced Settings to match organizational language (e.g. `DO` for regular day off, `Coff` for compensatory off, `VAC` for vacation, `SICK` for sick leave).
 * **Flexible Shift Configurations:** Supports 2-shift operations (12h Day / 12h Night), 3-shift operations (Morning / Evening / Night), or custom dynamic durations.
 * **Dedicated Vacations & Leaves Manager:** Full in-app tracking of employee vacation schedules, compensatory time off, and sick leave with one-click deletion.
