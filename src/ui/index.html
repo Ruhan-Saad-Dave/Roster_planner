@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LocalRoster v2 - Offline Workforce Roster Planner</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+  <!-- Top Persistent Header -->
+  <header>
+    <div class="brand">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+        <line x1="16" y1="2" x2="16" y2="6"></line>
+        <line x1="8" y1="2" x2="8" y2="6"></line>
+        <line x1="3" y1="10" x2="21" y2="10"></line>
+      </svg>
+      <span>LocalRoster</span>
+      <span class="brand-badge">v2.0 Offline</span>
+    </div>
+
+    <div class="header-controls">
+      <!-- Plan Selector -->
+      <select id="plan-select" class="select-input"></select>
+
+      <!-- View Selector -->
+      <select id="view-select" class="select-input">
+        <option value="staff_centric">Staff-Centric View</option>
+        <option value="slot_centric">Slot-Centric View</option>
+        <option value="audit_scorecard">Workload Audit Scorecard</option>
+      </select>
+
+      <!-- Mode Toggle -->
+      <button id="mode-toggle-btn" class="btn btn-sm">Simple Mode</button>
+
+      <!-- Action Buttons -->
+      <button id="new-plan-btn" class="btn btn-primary btn-sm">+ New Roster</button>
+      <button id="export-excel-btn" class="btn btn-sm">Export Excel</button>
+      <button id="export-pdf-btn" class="btn btn-sm">Export PDF</button>
+      <button id="import-btn" class="btn btn-sm">Import Data</button>
+      <button id="variants-btn" class="btn btn-sm">Variants</button>
+    </div>
+  </header>
+
+  <!-- Traffic-Light Health Banner -->
+  <div id="health-banner" class="health-banner green">
+    <div id="health-message">🟢 Loading Roster Status...</div>
+    <div id="health-actions"></div>
+  </div>
+
+  <!-- Main Workspace -->
+  <div class="main-wrapper">
+    <!-- Left Navigation Sidebar -->
+    <aside class="dept-sidebar">
+      <div class="sidebar-heading">Filter Departments</div>
+      <div id="dept-filter-list"></div>
+
+      <div class="sidebar-heading" style="margin-top: 15px;">Operational Actions</div>
+      <button id="prefill-toggle-btn" class="btn btn-sm" style="width: 100%;">Prefill Mode: OFF</button>
+      <button id="solve-remaining-btn" class="btn btn-sm btn-primary" style="width: 100%;">Solve Remaining</button>
+    </aside>
+
+    <!-- Main Grid Workspace -->
+    <main class="grid-container" id="grid-container">
+      <table class="schedule-table" id="schedule-table">
+        <!-- Rendered dynamically by app.js -->
+      </table>
+    </main>
+
+    <!-- Right Conflict & Shift Inspector -->
+    <aside class="inspector-panel" id="inspector-panel">
+      <div class="sidebar-heading">Real-Time Constraint Inspector</div>
+      <div id="inspector-content">
+        <p style="color: var(--text-muted); font-size: 12px;">Click any shift cell to inspect rules, rest intervals, or reassign manually.</p>
+      </div>
+      <div id="inspector-actions" class="hidden">
+        <button id="inspector-pin-btn" class="btn btn-sm">Pin / Lock Shift 📌</button>
+        <button id="inspector-clear-btn" class="btn btn-sm">Set as Day OFF</button>
+      </div>
+    </aside>
+  </div>
+
+  <!-- Modal: New Plan Generation -->
+  <div id="modal-new-plan" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Generate New Roster Plan</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <label>
+            <b>Plan Name:</b>
+            <input type="text" id="new-plan-name" class="text-input" style="width: 100%;" value="November 2026 Roster">
+          </label>
+          <div style="display: flex; gap: 10px;">
+            <label style="flex: 1;">
+              <b>Target Year:</b>
+              <select id="new-plan-year" class="select-input" style="width: 100%;">
+                <option value="2026" selected>2026</option>
+                <option value="2027">2027</option>
+                <option value="2028">2028 (Leap Year)</option>
+              </select>
+            </label>
+            <label style="flex: 1;">
+              <b>Target Month:</b>
+              <select id="new-plan-month" class="select-input" style="width: 100%;">
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="11" selected>November</option>
+                <option value="12">December</option>
+              </select>
+            </label>
+          </div>
+          <div id="calendar-preview" style="padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 11px; color: var(--text-muted);">
+            Horizon: Nov 01, 2026 to Nov 30, 2026 (30 days, 8 weekend days).
+          </div>
+          <label>
+            <b>Generate Multiple Variants:</b>
+            <select id="new-plan-variants" class="select-input" style="width: 100%;">
+              <option value="1">1 Variant (Standard Balanced)</option>
+              <option value="3" selected>3 Variants (Balanced, Min Float, Max Pref)</option>
+            </select>
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn close-modal">Cancel</button>
+        <button id="confirm-generate-btn" class="btn btn-primary">Start CP-SAT Solve</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Bulk Data Import Wizard -->
+  <div id="modal-import" class="modal-overlay hidden">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span>Bulk Data Onboarding & Import Wizard</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <p style="font-size: 12px; color: var(--text-muted);">Quickly bootstrap your workforce directory or operational demand matrix.</p>
+          <div style="display: flex; gap: 8px;">
+            <select id="import-type-select" class="select-input" style="flex: 1;">
+              <option value="employees">Employees Directory</option>
+              <option value="departments">Departments</option>
+              <option value="demands">Demand Matrix</option>
+              <option value="leaves">Leave Records</option>
+            </select>
+            <button id="download-template-btn" class="btn btn-sm">Download Template</button>
+          </div>
+          <input type="file" id="import-file-input" class="text-input" accept=".csv,.xlsx">
+          <div id="import-preview-box" style="font-size: 11px; max-height: 200px; overflow-y: auto;"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn close-modal">Close</button>
+        <button id="commit-import-btn" class="btn btn-primary hidden">Commit Valid Records</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Multi-Variant Comparison -->
+  <div id="modal-variants" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 750px;">
+      <div class="modal-header">
+        <span>Candidate Variant Comparison</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="variants-comparison-content">
+          <p style="color: var(--text-muted);">Loading session variants...</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
