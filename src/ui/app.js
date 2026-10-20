@@ -10,6 +10,7 @@ const state = {
   currentMode: "simple",
   prefillMode: false,
   showPrevMonth: false,
+  zoomLevel: 1.0,
   plans: [],
   departments: [],
   shifts: [],
@@ -78,6 +79,9 @@ async function initApp() {
     state.shifts = await apiGet("/api/shift-types");
     await loadPlans();
     setupEventListeners();
+    initResizers();
+    initZoom();
+    initOnboarding();
   } catch (err) {
     console.error("Initialization error:", err);
   }
@@ -203,6 +207,7 @@ function renderDeptFilters() {
 function renderStaffCentric(data) {
   const table = document.getElementById("schedule-table");
   table.innerHTML = "";
+  table.style.zoom = state.zoomLevel;
 
   // Thead
   const thead = document.createElement("thead");
@@ -336,6 +341,7 @@ function renderStaffCentric(data) {
 function renderSlotCentric(data) {
   const table = document.getElementById("schedule-table");
   table.innerHTML = "";
+  table.style.zoom = state.zoomLevel;
 
   const thead = document.createElement("thead");
   thead.innerHTML = `
@@ -386,6 +392,7 @@ function renderSlotCentric(data) {
 function renderAuditScorecard(data) {
   const table = document.getElementById("schedule-table");
   table.innerHTML = "";
+  table.style.zoom = state.zoomLevel;
 
   const thead = document.createElement("thead");
   thead.innerHTML = `
@@ -644,6 +651,175 @@ window.deleteEmployee = async function(id, name) {
     alert("Cannot delete employee: " + err.message);
   }
 };
+
+// ==========================================
+// Zoom Controller
+// ==========================================
+function setZoom(level) {
+  const clamped = Math.min(1.6, Math.max(0.65, Math.round(level * 100) / 100));
+  state.zoomLevel = clamped;
+  const label = document.getElementById("zoom-label");
+  if (label) label.textContent = `${Math.round(clamped * 100)}%`;
+  const table = document.getElementById("schedule-table");
+  if (table) table.style.zoom = clamped;
+  localStorage.setItem("localroster_zoom_level", clamped.toString());
+}
+
+function initZoom() {
+  const savedZoom = parseFloat(localStorage.getItem("localroster_zoom_level"));
+  if (!isNaN(savedZoom)) {
+    setZoom(savedZoom);
+  }
+
+  const zoomInBtn = document.getElementById("zoom-in-btn");
+  if (zoomInBtn) zoomInBtn.onclick = () => setZoom(state.zoomLevel + 0.1);
+
+  const zoomOutBtn = document.getElementById("zoom-out-btn");
+  if (zoomOutBtn) zoomOutBtn.onclick = () => setZoom(state.zoomLevel - 0.1);
+
+  const zoomResetBtn = document.getElementById("zoom-reset-btn");
+  if (zoomResetBtn) zoomResetBtn.onclick = () => setZoom(1.0);
+
+  // Ctrl + MouseWheel on grid container
+  const gridContainer = document.getElementById("grid-container");
+  if (gridContainer) {
+    gridContainer.addEventListener("wheel", (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 0.08 : -0.08;
+        setZoom(state.zoomLevel + delta);
+      }
+    }, { passive: false });
+  }
+}
+
+// ==========================================
+// Resizable Sidebars Controller
+// ==========================================
+function initResizers() {
+  const leftResizer = document.getElementById("resizer-left");
+  const leftSidebar = document.getElementById("dept-sidebar");
+  const rightResizer = document.getElementById("resizer-right");
+  const rightPanel = document.getElementById("inspector-panel");
+
+  // Restore saved widths
+  const savedLeft = localStorage.getItem("localroster_sidebar_left_width");
+  if (savedLeft && leftSidebar) leftSidebar.style.width = `${savedLeft}px`;
+
+  const savedRight = localStorage.getItem("localroster_sidebar_right_width");
+  if (savedRight && rightPanel) rightPanel.style.width = `${savedRight}px`;
+
+  // Left Resizer Dragging
+  if (leftResizer && leftSidebar) {
+    let startX, startWidth;
+    const onMouseMoveLeft = (e) => {
+      const dx = e.clientX - startX;
+      const newWidth = Math.min(450, Math.max(140, startWidth + dx));
+      leftSidebar.style.width = `${newWidth}px`;
+      localStorage.setItem("localroster_sidebar_left_width", newWidth);
+    };
+    const onMouseUpLeft = () => {
+      document.body.classList.remove("resizing-active");
+      leftResizer.classList.remove("dragging");
+      window.removeEventListener("mousemove", onMouseMoveLeft);
+      window.removeEventListener("mouseup", onMouseUpLeft);
+    };
+    leftResizer.addEventListener("mousedown", (e) => {
+      startX = e.clientX;
+      startWidth = leftSidebar.offsetWidth;
+      document.body.classList.add("resizing-active");
+      leftResizer.classList.add("dragging");
+      window.addEventListener("mousemove", onMouseMoveLeft);
+      window.addEventListener("mouseup", onMouseUpLeft);
+    });
+  }
+
+  // Right Resizer Dragging
+  if (rightResizer && rightPanel) {
+    let startX, startWidth;
+    const onMouseMoveRight = (e) => {
+      const dx = startX - e.clientX;
+      const newWidth = Math.min(550, Math.max(180, startWidth + dx));
+      rightPanel.style.width = `${newWidth}px`;
+      localStorage.setItem("localroster_sidebar_right_width", newWidth);
+    };
+    const onMouseUpRight = () => {
+      document.body.classList.remove("resizing-active");
+      rightResizer.classList.remove("dragging");
+      window.removeEventListener("mousemove", onMouseMoveRight);
+      window.removeEventListener("mouseup", onMouseUpRight);
+    };
+    rightResizer.addEventListener("mousedown", (e) => {
+      startX = e.clientX;
+      startWidth = rightPanel.offsetWidth;
+      document.body.classList.add("resizing-active");
+      rightResizer.classList.add("dragging");
+      window.addEventListener("mousemove", onMouseMoveRight);
+      window.addEventListener("mouseup", onMouseUpRight);
+    });
+  }
+}
+
+// ==========================================
+// Onboarding Wizard Controller
+// ==========================================
+function initOnboarding() {
+  const hasSeen = localStorage.getItem("localroster_onboarding_chosen");
+  if (!hasSeen) {
+    setTimeout(() => {
+      const modal = document.getElementById("modal-onboarding");
+      if (modal) modal.classList.remove("hidden");
+    }, 350);
+  }
+
+  const welcomeBtn = document.getElementById("welcome-setup-btn");
+  if (welcomeBtn) {
+    welcomeBtn.onclick = () => {
+      document.getElementById("modal-onboarding").classList.remove("hidden");
+    };
+  }
+
+  const cb = document.getElementById("dont-show-onboarding-cb");
+
+  // Path 1: Import
+  const btnImport = document.getElementById("onboarding-btn-import");
+  if (btnImport) {
+    btnImport.onclick = () => {
+      document.getElementById("modal-onboarding").classList.add("hidden");
+      if (cb && cb.checked) localStorage.setItem("localroster_onboarding_chosen", "true");
+      document.getElementById("modal-import").classList.remove("hidden");
+    };
+  }
+
+  // Path 2: Start from scratch
+  const btnScratch = document.getElementById("onboarding-btn-scratch");
+  if (btnScratch) {
+    btnScratch.onclick = async () => {
+      document.getElementById("modal-onboarding").classList.add("hidden");
+      if (cb && cb.checked) localStorage.setItem("localroster_onboarding_chosen", "true");
+      document.getElementById("modal-manage-org").classList.remove("hidden");
+      await loadOrgDepartments();
+      await loadOrgEmployees();
+    };
+  }
+
+  // Path 3: Explore Demo
+  const btnDemo = document.getElementById("onboarding-btn-demo");
+  if (btnDemo) {
+    btnDemo.onclick = () => {
+      document.getElementById("modal-onboarding").classList.add("hidden");
+      if (cb && cb.checked) localStorage.setItem("localroster_onboarding_chosen", "true");
+      loadSchedule();
+    };
+  }
+
+  if (cb) {
+    cb.onchange = (e) => {
+      if (e.target.checked) localStorage.setItem("localroster_onboarding_chosen", "true");
+      else localStorage.removeItem("localroster_onboarding_chosen");
+    };
+  }
+}
 
 // ==========================================
 // Event Listeners & Modals

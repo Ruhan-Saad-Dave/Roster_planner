@@ -38,6 +38,17 @@
       <!-- Prev Month Toggle -->
       <button id="toggle-prev-month-btn" class="btn btn-sm" title="Show/Hide Previous Month Trailing Shifts & Hours">📅 Prev Month: OFF</button>
 
+      <!-- Zoom Controls -->
+      <div class="zoom-pill" title="Zoom Schedule Table (or Ctrl + Scroll wheel)">
+        <button id="zoom-out-btn" class="zoom-btn" title="Zoom Out (Ctrl -)">−</button>
+        <span id="zoom-label">100%</span>
+        <button id="zoom-in-btn" class="zoom-btn" title="Zoom In (Ctrl +)">+</button>
+        <button id="zoom-reset-btn" class="zoom-btn zoom-btn-text" title="Reset Zoom to 100%">100%</button>
+      </div>
+
+      <!-- Quick Setup / Onboarding -->
+      <button id="welcome-setup-btn" class="btn btn-sm" title="Setup Options / Onboarding Wizard">🚀 Setup</button>
+
       <!-- Org Management -->
       <button id="manage-org-btn" class="btn btn-sm" title="Manage Departments, Staff & Colors">⚙️ Manage Org</button>
 
@@ -60,9 +71,9 @@
   </div>
 
   <!-- Main Workspace -->
-  <div class="main-wrapper">
+  <div class="main-wrapper" id="main-wrapper">
     <!-- Left Navigation Sidebar -->
-    <aside class="dept-sidebar">
+    <aside class="dept-sidebar" id="dept-sidebar">
       <div class="sidebar-heading">Filter Departments</div>
       <div id="dept-filter-list"></div>
 
@@ -71,12 +82,18 @@
       <button id="solve-remaining-btn" class="btn btn-sm btn-primary" style="width: 100%;">Solve Remaining</button>
     </aside>
 
+    <!-- Left Resizer Splitter -->
+    <div class="resizer resizer-left" id="resizer-left" title="Drag to resize departments sidebar"></div>
+
     <!-- Main Grid Workspace -->
     <main class="grid-container" id="grid-container">
       <table class="schedule-table" id="schedule-table">
         <!-- Rendered dynamically by app.js -->
       </table>
     </main>
+
+    <!-- Right Resizer Splitter -->
+    <div class="resizer resizer-right" id="resizer-right" title="Drag to resize constraint inspector"></div>
 
     <!-- Right Conflict & Shift Inspector -->
     <aside class="inspector-panel" id="inspector-panel">
@@ -478,6 +495,67 @@
       </div>
       <div class="modal-footer">
         <button class="btn btn-primary close-modal">Got It, Let's Plan</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Initial Setup & Onboarding Wizard -->
+  <div id="modal-onboarding" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 820px; width: 95%;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #fff;">
+        <div>
+          <div style="font-size: 16px; font-weight: 700;">👋 Welcome to LocalRoster v2</div>
+          <div style="font-size: 11px; color: #94a3b8; margin-top: 2px;">Offline Mathematical Workforce Scheduling Platform</div>
+        </div>
+        <button class="btn btn-sm close-modal" style="color: #fff; background: transparent; border: none; font-size: 18px;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 20px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          How would you like to set up your workforce and departments today? Choose an onboarding path below:
+        </p>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px;">
+          
+          <!-- Path 1: Import Existing Data -->
+          <div class="onboarding-card" id="onboarding-opt-import">
+            <div class="onboarding-icon" style="background: #eff6ff; color: #2563eb;">📥</div>
+            <div class="onboarding-badge" style="background: #dbeafe; color: #1e40af;">Bulk Data Import</div>
+            <h4 style="margin: 8px 0 4px 0; font-size: 14px;">Import Data (Spreadsheets)</h4>
+            <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; flex: 1;">
+              Already have an employee directory, departmental topology, or shift coverage matrix in Excel/CSV? Download pre-formatted templates and bulk import.
+            </p>
+            <button id="onboarding-btn-import" class="btn btn-primary btn-sm" style="width: 100%; margin-top: 12px;">Import Spreadsheets &rarr;</button>
+          </div>
+
+          <!-- Path 2: Start from Scratch -->
+          <div class="onboarding-card" id="onboarding-opt-scratch">
+            <div class="onboarding-icon" style="background: #f0fdf4; color: #16a34a;">✨</div>
+            <div class="onboarding-badge" style="background: #dcfce7; color: #166534;">Clean Start</div>
+            <h4 style="margin: 8px 0 4px 0; font-size: 14px;">Start from Scratch</h4>
+            <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; flex: 1;">
+              Configure your organization manually. Define your departments, pick custom color schemes, select operating regimes (24/7 vs Weekdays), and register staff directly.
+            </p>
+            <button id="onboarding-btn-scratch" class="btn btn-sm" style="width: 100%; margin-top: 12px; background: #ffffff; border-color: #16a34a; color: #16a34a; font-weight: 600;">Open Org Manager &rarr;</button>
+          </div>
+
+          <!-- Path 3: Explore Demo Scenario -->
+          <div class="onboarding-card" id="onboarding-opt-demo">
+            <div class="onboarding-icon" style="background: #faf5ff; color: #9333ea;">🏥</div>
+            <div class="onboarding-badge" style="background: #f3e8ff; color: #6b21a8;">Instant Demo Dataset</div>
+            <h4 style="margin: 8px 0 4px 0; font-size: 14px;">Explore Demo Hospital</h4>
+            <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; flex: 1;">
+              Test drive the CP-SAT optimization engine with our realistic 4-department hospital scenario (ICU, ER, Surgical, Outpatient) and 32 cross-trained staff.
+            </p>
+            <button id="onboarding-btn-demo" class="btn btn-sm" style="width: 100%; margin-top: 12px; background: #ffffff; border-color: #9333ea; color: #9333ea; font-weight: 600;">Explore Demo Roster &rarr;</button>
+          </div>
+
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between; align-items: center;">
+        <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; user-select: none;">
+          <input type="checkbox" id="dont-show-onboarding-cb"> Don't show this welcome screen on startup
+        </label>
+        <button class="btn close-modal">Skip to Workspace &rarr;</button>
       </div>
     </div>
   </div>
