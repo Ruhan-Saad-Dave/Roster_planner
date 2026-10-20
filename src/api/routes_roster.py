@@ -478,6 +478,52 @@ def save_manual_assignment(
     db.commit()
     return {"message": "Assignment updated successfully.", "is_valid": val["is_valid"]}
 
+@router.delete("/{plan_id}/assignments")
+def remove_assignment(
+    plan_id: int,
+    employee_id: int = Query(...),
+    date: date = Query(...),
+    db: Session = Depends(get_db)
+):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    existing = db.query(RosterAssignment).filter(
+        RosterAssignment.plan_id == plan_id,
+        RosterAssignment.employee_id == employee_id,
+        RosterAssignment.date == date
+    ).first()
+
+    if existing:
+        db.delete(existing)
+        db.commit()
+        return {"message": "Assignment cleared (set as OFF).", "cleared": True}
+    return {"message": "No assignment existed on this date.", "cleared": False}
+
+@router.post("/{plan_id}/assignments/toggle-pin")
+def toggle_pin_assignment(
+    plan_id: int,
+    employee_id: int = Query(...),
+    date: date = Query(...),
+    db: Session = Depends(get_db)
+):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    existing = db.query(RosterAssignment).filter(
+        RosterAssignment.plan_id == plan_id,
+        RosterAssignment.employee_id == employee_id,
+        RosterAssignment.date == date
+    ).first()
+    if not existing:
+        raise HTTPException(status_code=404, detail="No assignment exists to pin on this date.")
+
+    existing.is_pinned = not existing.is_pinned
+    db.commit()
+    return {"is_pinned": existing.is_pinned, "message": "Shift pinned" if existing.is_pinned else "Shift unpinned"}
+
 @router.post("/{plan_id}/solve-remaining")
 def solve_remaining(plan_id: int, timeout_seconds: int = 15, db: Session = Depends(get_db)):
     plan = solve_remaining_blank_slots(db, plan_id, timeout_seconds=timeout_seconds)

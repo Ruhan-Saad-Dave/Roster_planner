@@ -558,6 +558,34 @@ async function selectAssignment(emp, dateStr, currentAssignment) {
       };
     }
   };
+
+  // Wire Inspector Pin & Clear buttons
+  const pinBtn = document.getElementById("inspector-pin-btn");
+  if (pinBtn) {
+    const isPinned = currentAssignment && currentAssignment.is_pinned;
+    pinBtn.textContent = isPinned ? "Unpin Shift 🔓" : "Pin / Lock Shift 📌";
+    pinBtn.className = `btn btn-sm ${isPinned ? "btn-primary" : ""}`;
+    pinBtn.onclick = async () => {
+      if (!currentAssignment) {
+        alert("Please select or assign a shift first before pinning.");
+        return;
+      }
+      const res = await apiPost(`/api/roster/${state.activePlanId}/assignments/toggle-pin?employee_id=${emp.employee_id}&date=${dateStr}`, {});
+      await loadSchedule();
+      selectAssignment(emp, dateStr, { ...currentAssignment, is_pinned: res.is_pinned });
+    };
+  }
+
+  const clearBtn = document.getElementById("inspector-clear-btn");
+  if (clearBtn) {
+    clearBtn.disabled = !currentAssignment;
+    clearBtn.onclick = async () => {
+      if (!currentAssignment) return;
+      await apiDelete(`/api/roster/${state.activePlanId}/assignments?employee_id=${emp.employee_id}&date=${dateStr}`);
+      await loadSchedule();
+      selectAssignment(emp, dateStr, null);
+    };
+  }
 }
 
 // ==========================================
@@ -978,22 +1006,41 @@ function setupEventListeners() {
   }
 
   const prefillBtn = document.getElementById("prefill-toggle-btn");
+  const sidebarPrefillBtn = document.getElementById("sidebar-prefill-btn");
   if (prefillBtn) {
     prefillBtn.onclick = (e) => {
       state.prefillMode = !state.prefillMode;
-      e.target.textContent = `Prefill Mode: ${state.prefillMode ? "ON 📌" : "OFF"}`;
-      e.target.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
+      const text = `Prefill Mode: ${state.prefillMode ? "ON 📌" : "OFF"}`;
+      prefillBtn.textContent = text;
+      prefillBtn.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
+      if (sidebarPrefillBtn) {
+        sidebarPrefillBtn.textContent = text;
+        sidebarPrefillBtn.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
+      }
+    };
+  }
+  if (sidebarPrefillBtn) {
+    sidebarPrefillBtn.onclick = (e) => {
+      state.prefillMode = !state.prefillMode;
+      const text = `Prefill Mode: ${state.prefillMode ? "ON 📌" : "OFF"}`;
+      sidebarPrefillBtn.textContent = text;
+      sidebarPrefillBtn.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
+      if (prefillBtn) {
+        prefillBtn.textContent = text;
+        prefillBtn.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
+      }
     };
   }
 
   const solveRemBtn = document.getElementById("solve-remaining-btn");
-  if (solveRemBtn) {
-    solveRemBtn.onclick = async () => {
-      if (!state.activePlanId) return;
-      await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
-      await loadSchedule();
-    };
-  }
+  const sidebarSolveBtn = document.getElementById("sidebar-solve-btn");
+  const onSolveRemaining = async () => {
+    if (!state.activePlanId) return;
+    await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
+    await loadSchedule();
+  };
+  if (solveRemBtn) solveRemBtn.onclick = onSolveRemaining;
+  if (sidebarSolveBtn) sidebarSolveBtn.onclick = onSolveRemaining;
 
   const expExcelBtn = document.getElementById("export-excel-btn");
   if (expExcelBtn) {
@@ -1301,6 +1348,92 @@ function setupEventListeners() {
     dlTplBtn.onclick = () => {
       const type = document.getElementById("import-type-select").value;
       window.location.href = `/api/import/template/${type}`;
+    };
+  }
+
+  // Import File Input & Preview
+  const importFileInput = document.getElementById("import-file-input");
+  const commitImportBtn = document.getElementById("commit-import-btn");
+  const importTypeSelect = document.getElementById("import-type-select");
+  const importPreviewBox = document.getElementById("import-preview-box");
+  let pendingImportFile = null;
+
+  if (importFileInput) {
+    importFileInput.onchange = async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      pendingImportFile = file;
+
+      const entityType = importTypeSelect ? importTypeSelect.value : "employees";
+      if (importPreviewBox) {
+        importPreviewBox.innerHTML = "<p style='color:var(--text-muted);padding:8px;'>Validating spreadsheet rows...</p>";
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      try {
+        const res = await fetch(`/api/import/preview/${entityType}`, {
+          method: "POST",
+          body: formData
+        });
+        if (!res.ok) throw new Error(await res.text());
+        const preview = await res.json();
+
+        let html = `
+          <div style="padding: 10px; background: #f8fafc; border: 1px solid var(--border-color); border-radius: 6px; margin-top: 6px;">
+            <div><b>Filename:</b> ${preview.filename}</div>
+            <div><b>Total Detected Rows:</b> ${preview.total_rows}</div>
+            <div style="color: #16a34a;"><b>Valid Records:</b> ${preview.valid_rows}</div>
+            <div style="color: ${preview.invalid_rows > 0 ? '#dc2626' : '#64748b'};"><b>Invalid Records:</b> ${preview.invalid_rows}</div>
+          </div>
+        `;
+
+        if (preview.errors && preview.errors.length > 0) {
+          html += `<div class="alert-card danger" style="margin-top: 6px;"><b>Errors detected:</b><br>${preview.errors.slice(0, 5).map(err => `• Row ${err.row}: ${err.error}`).join("<br>")}${preview.errors.length > 5 ? `<br>...and ${preview.errors.length - 5} more.` : ''}</div>`;
+          if (commitImportBtn) commitImportBtn.classList.add("hidden");
+        } else if (preview.valid_rows > 0) {
+          html += `<div class="alert-card success" style="margin-top: 6px;">✓ All ${preview.valid_rows} records validated successfully and are ready to commit!</div>`;
+          if (commitImportBtn) commitImportBtn.classList.remove("hidden");
+        } else {
+          if (commitImportBtn) commitImportBtn.classList.add("hidden");
+        }
+
+        if (importPreviewBox) importPreviewBox.innerHTML = html;
+      } catch (err) {
+        if (importPreviewBox) importPreviewBox.innerHTML = `<div class="alert-card danger">Failed to preview file: ${err.message}</div>`;
+        if (commitImportBtn) commitImportBtn.classList.add("hidden");
+      }
+    };
+  }
+
+  if (commitImportBtn) {
+    commitImportBtn.onclick = async () => {
+      if (!pendingImportFile) return;
+      const entityType = importTypeSelect ? importTypeSelect.value : "employees";
+      const formData = new FormData();
+      formData.append("file", pendingImportFile);
+
+      try {
+        const res = await fetch(`/api/import/commit/${entityType}`, {
+          method: "POST",
+          body: formData
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail?.message || "Import failed");
+        }
+        const data = await res.json();
+        alert(data.message || "Data imported successfully!");
+        document.getElementById("modal-import").classList.add("hidden");
+        state.departments = await apiGet("/api/departments");
+        renderDeptFilters();
+        await loadOrgDepartments();
+        await loadOrgEmployees();
+        await loadSchedule();
+      } catch (err) {
+        alert("Import error: " + err.message);
+      }
     };
   }
 }
