@@ -16,6 +16,7 @@ from src.api.routes_export import router as export_router
 from src.api.routes_import import router as import_router
 from src.api.routes_analytics import router as analytics_router
 from src.api.routes_mcp import router as mcp_router
+from src.api.routes_settings import router as settings_router
 
 UI_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "ui")
 
@@ -49,6 +50,7 @@ app.include_router(export_router)
 app.include_router(import_router)
 app.include_router(analytics_router)
 app.include_router(mcp_router)
+app.include_router(settings_router)
 
 # Serve UI Static Assets
 if os.path.exists(UI_DIR):

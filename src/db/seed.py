@@ -1,15 +1,26 @@
 """Seed data generators for testing dynamic organizational topologies."""
 from datetime import date, timedelta
+import json
+from sqlalchemy import text
 from src.db.session import engine, SessionLocal, Base
 from src.db.models import (
     Department, ShiftType, DepartmentRequirement,
     Employee, EmployeeDepartmentEligibility, EmployeeShiftPreference,
-    LeaveRecord, RosterPlan, RosterAssignment, DeficitLog
+    LeaveRecord, RosterPlan, RosterAssignment, DeficitLog, SystemSetting
 )
 
 def init_db():
-    """Create all tables in the SQLite database."""
+    """Create all tables in the SQLite database and run backward-compatible schema patches."""
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            cursor = conn.execute(text("PRAGMA table_info(employees)"))
+            cols = [row[1] for row in cursor.fetchall()]
+            if "fixed_off_days" not in cols:
+                conn.execute(text("ALTER TABLE employees ADD COLUMN fixed_off_days VARCHAR(64) DEFAULT NULL"))
+                conn.commit()
+    except Exception as e:
+        print(f"Schema check error: {e}")
 
 def seed_standard_hospital(db=None):
     """Seed a realistic multi-department 24x7 hospital scenario with 3 shifts,
@@ -196,6 +207,22 @@ def seed_standard_hospital(db=None):
             status="APPROVED",
             notes="Family PTO"
         ))
+
+        # 6. Default System Settings
+        default_settings = [
+            ("generator_default_mode", "blank"),
+            ("remember_generator_mode", "false"),
+            ("custom_status_codes", json.dumps({
+                "OFF": "OFF",
+                "COFF": "Coff",
+                "VAC": "Vacation",
+                "SICK": "Sick"
+            }))
+        ]
+        for key, val in default_settings:
+            existing = db.query(SystemSetting).filter(SystemSetting.key == key).first()
+            if not existing:
+                db.add(SystemSetting(key=key, value=val))
 
         db.commit()
     finally:

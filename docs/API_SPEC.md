@@ -271,6 +271,14 @@
   ```
   - **Response 201 Created:** Returns leave record.
 
+* **`DELETE /api/leaves/{id}`**
+  - **Response 200 OK:**
+  ```json
+  {
+    "message": "Leave record deleted successfully."
+  }
+  ```
+
 ---
 
 ### 4. Roster Planning, Solver Execution & Diagnostics
@@ -524,6 +532,23 @@
     "employee_id": 10,
     "date": "2026-11-01",
     "is_pinned": true
+  }
+  ```
+
+* **`POST /api/roster/{id}/find-replace`**
+  - **Request Body:**
+  ```json
+  {
+    "find_shift_code": "NIGHT",
+    "replace_shift_code": "EVE",
+    "department_id": null
+  }
+  ```
+  - **Response 200 OK:**
+  ```json
+  {
+    "replaced_count": 8,
+    "message": "Replaced 8 instance(s) of 'NIGHT' with 'EVE'."
   }
   ```
 

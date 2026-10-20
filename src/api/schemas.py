@@ -38,6 +38,16 @@ class ShiftTypeCreate(BaseModel):
     min_rest_hours_after: Optional[int] = 14
     is_night_shift: Optional[bool] = False
 
+class ShiftTypeUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    duration_hours: Optional[float] = None
+    min_rest_hours_after: Optional[int] = None
+    is_night_shift: Optional[bool] = None
+    is_active: Optional[bool] = None
+
 class ShiftTypeResponse(BaseModel):
     id: int
     code: str
@@ -68,6 +78,7 @@ class EmployeeCreate(BaseModel):
     email: Optional[str] = None
     primary_department_id: int
     max_hours_week: Optional[float] = 40.0
+    fixed_off_days: Optional[str] = None
 
 class EmployeeUpdate(BaseModel):
     employee_code: Optional[str] = None
@@ -75,6 +86,7 @@ class EmployeeUpdate(BaseModel):
     email: Optional[str] = None
     primary_department_id: Optional[int] = None
     max_hours_week: Optional[float] = None
+    fixed_off_days: Optional[str] = None
     is_active: Optional[bool] = None
 
 class EmployeeResponse(BaseModel):
@@ -85,6 +97,7 @@ class EmployeeResponse(BaseModel):
     primary_department_id: int
     primary_department_name: Optional[str] = None
     max_hours_week: float
+    fixed_off_days: Optional[str] = None
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -156,3 +169,12 @@ class ManualAssignmentRequest(BaseModel):
 
 class PrefillShiftsRequest(BaseModel):
     assignments: List[Dict[str, Any]]
+
+class FindReplaceRequest(BaseModel):
+    find_shift_code: str
+    replace_shift_code: str
+    department_id: Optional[int] = None
+
+class SystemSettingsUpdate(BaseModel):
+    settings: Dict[str, str]
+

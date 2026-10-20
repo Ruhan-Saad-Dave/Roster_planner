@@ -96,6 +96,8 @@ def update_employee(emp_id: int, emp_in: EmployeeUpdate, db: Session = Depends(g
         emp.email = emp_in.email
     if emp_in.max_hours_week is not None:
         emp.max_hours_week = emp_in.max_hours_week
+    if emp_in.fixed_off_days is not None:
+        emp.fixed_off_days = emp_in.fixed_off_days
     if emp_in.is_active is not None:
         emp.is_active = emp_in.is_active
 
@@ -200,3 +202,12 @@ def create_leave(leave_in: LeaveRecordCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(leave)
     return leave
+
+@router.delete("/leaves/{leave_id}")
+def delete_leave(leave_id: int, db: Session = Depends(get_db)):
+    leave = db.query(LeaveRecord).filter(LeaveRecord.id == leave_id).first()
+    if not leave:
+        raise HTTPException(status_code=404, detail="Leave record not found.")
+    db.delete(leave)
+    db.commit()
+    return {"message": "Leave record deleted successfully."}

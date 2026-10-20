@@ -83,6 +83,7 @@ class Employee(Base):
     email = Column(String(128), nullable=True)
     primary_department_id = Column(Integer, ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False)
     max_hours_week = Column(Float, nullable=False, default=40.0)
+    fixed_off_days = Column(String(64), nullable=True, default=None)  # Comma-separated day indices (0=Mon..6=Sun)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -247,3 +248,12 @@ class DeficitLog(Base):
         CheckConstraint("shortage_count > 0", name="ck_shortage_positive"),
         Index("idx_deficit_plan", "plan_id", "department_id", "date"),
     )
+
+
+class SystemSetting(Base):
+    __tablename__ = "system_settings"
+
+    key = Column(String(64), primary_key=True)
+    value = Column(Text, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+

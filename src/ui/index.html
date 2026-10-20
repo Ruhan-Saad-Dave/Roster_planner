@@ -49,10 +49,11 @@
       <div class="ribbon-group">
         <span class="ribbon-group-title">Solver Execution</span>
         <div class="ribbon-group-tools">
-          <button id="new-plan-btn" class="btn btn-primary btn-sm">+ New Roster</button>
+          <button id="new-plan-btn" class="btn btn-hero-generate" title="Generate CP-SAT Optimized Roster">⚡ + Generate Roster</button>
           <button id="solve-remaining-btn" class="btn btn-sm btn-accent" title="Solve blank slots while keeping pinned slots locked">Solve Remaining</button>
           <button id="prefill-toggle-btn" class="btn btn-sm">Prefill Mode: OFF</button>
           <button id="variants-btn" class="btn btn-sm">Compare Variants</button>
+          <button id="find-replace-btn" class="btn btn-sm" title="Find and replace shift codes or highlight matching cells across grid">🔍 Find & Replace</button>
         </div>
       </div>
       <div class="ribbon-group">
@@ -75,6 +76,8 @@
         <span class="ribbon-group-title">Workforce Directory</span>
         <div class="ribbon-group-tools">
           <button id="manage-org-btn" class="btn btn-primary btn-sm">⚙️ Manage Org (Depts, Staff & Colors)</button>
+          <button id="vacations-mgr-btn" class="btn btn-sm" title="Manage Employee Vacations & Approved Leaves">🏖️ Vacations & Leaves</button>
+          <button id="advanced-settings-btn" class="btn btn-sm" title="Customize Shift Codes, Comp Offs, 2-Shift vs 3-Shift, and Defaults">⚙️ Advanced Settings</button>
         </div>
       </div>
       <div class="ribbon-group">
@@ -146,9 +149,12 @@
       <div id="inspector-content">
         <p style="color: var(--text-muted); font-size: 12px;">Click any shift cell to inspect rules, rest intervals, or reassign manually.</p>
       </div>
-      <div id="inspector-actions" class="hidden">
+      <div id="inspector-conflict-alert" class="alert-card danger hidden" style="margin-top: 8px;">
+        <!-- Dynamically rendered conflict message -->
+      </div>
+      <div id="inspector-actions" class="hidden" style="display: flex; flex-direction: column; gap: 8px;">
         <button id="inspector-pin-btn" class="btn btn-sm">Pin / Lock Shift 📌</button>
-        <button id="inspector-clear-btn" class="btn btn-sm">Set as Day OFF</button>
+        <button id="inspector-clear-btn" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">✕ Empty Cell / Day OFF (Del)</button>
       </div>
     </aside>
   </div>
@@ -359,6 +365,27 @@
                 <input type="number" id="emp-form-hours" class="text-input" value="40.0" step="0.5" min="10" max="60" style="width: 100%;">
               </label>
             </div>
+            <div style="margin-top: 10px;">
+              <span class="form-label">Dedicated Recurring Days Off (Leave blank for flexible):</span>
+              <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px; flex-wrap: wrap;">
+                <select id="emp-form-fixed-preset" class="select-input">
+                  <option value="">Dynamic / Flexible (No fixed days off)</option>
+                  <option value="5,6">Weekends (Saturday & Sunday)</option>
+                  <option value="0,1">Monday & Tuesday</option>
+                  <option value="6,0">Sunday & Monday</option>
+                  <option value="custom">Custom Days (Select Checkboxes)</option>
+                </select>
+                <div id="emp-fixed-days-checkboxes" style="display: flex; gap: 8px; font-size: 11px;">
+                  <label><input type="checkbox" class="fixed-day-cb" value="0"> Mo</label>
+                  <label><input type="checkbox" class="fixed-day-cb" value="1"> Tu</label>
+                  <label><input type="checkbox" class="fixed-day-cb" value="2"> We</label>
+                  <label><input type="checkbox" class="fixed-day-cb" value="3"> Th</label>
+                  <label><input type="checkbox" class="fixed-day-cb" value="4"> Fr</label>
+                  <label><input type="checkbox" class="fixed-day-cb" value="5"> Sa</label>
+                  <label><input type="checkbox" class="fixed-day-cb" value="6"> Su</label>
+                </div>
+              </div>
+            </div>
             <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
               <button id="cancel-emp-form-btn" class="btn btn-sm">Cancel</button>
               <button id="save-emp-form-btn" class="btn btn-sm btn-primary">Save Employee</button>
@@ -375,6 +402,7 @@
                   <th>Employee Name</th>
                   <th>Primary Department</th>
                   <th>Max Hours</th>
+                  <th>Fixed Off Days</th>
                   <th>Active</th>
                   <th style="text-align: right; width: 120px;">Actions</th>
                 </tr>
@@ -601,6 +629,269 @@
           <input type="checkbox" id="dont-show-onboarding-cb"> Don't show this welcome screen on startup
         </label>
         <button class="btn close-modal">Skip to Workspace &rarr;</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Roster Generation Mode Choice -->
+  <div id="modal-gen-choice" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 560px;">
+      <div class="modal-header">
+        <span>⚡ Generate Roster: Choose Mode</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;">
+          How would you like to generate this roster? Select a solving mode:
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <label class="onboarding-card" style="cursor: pointer; display: flex; gap: 12px; align-items: flex-start; padding: 12px;">
+            <input type="radio" name="gen-mode-choice" value="blank" checked style="margin-top: 3px;">
+            <div>
+              <b style="font-size: 13px; color: #1e293b;">⚡ Generate from Blank Canvas</b>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                Clears unpinned shifts and solves the entire month from scratch using CP-SAT, ensuring 100% mathematical balance across all wards.
+              </p>
+            </div>
+          </label>
+
+          <label class="onboarding-card" style="cursor: pointer; display: flex; gap: 12px; align-items: flex-start; padding: 12px;">
+            <input type="radio" name="gen-mode-choice" value="existing" style="margin-top: 3px;">
+            <div>
+              <b style="font-size: 13px; color: #1e293b;">📌 Generate Using Existing Data</b>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 3px;">
+                Preserves all currently prefilled shifts, employee vacations, and locked days off. Solves only remaining blank slots.
+              </p>
+            </div>
+          </label>
+        </div>
+
+        <div style="margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border-color); display: flex; align-items: center; justify-content: space-between;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); cursor: pointer; user-select: none;">
+            <input type="checkbox" id="remember-gen-choice-cb"> Remember this setting (change later in Advanced Settings)
+          </label>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button id="gen-open-options-btn" class="btn btn-sm">⚙️ Configure Options &rarr;</button>
+        <div style="display: flex; gap: 8px;">
+          <button class="btn btn-sm close-modal">Cancel</button>
+          <button id="gen-proceed-btn" class="btn btn-sm btn-primary">Proceed to Generate ⚡</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Live Engaging Solver Progress -->
+  <div id="modal-solver-progress" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 520px; text-align: center;">
+      <div class="modal-header" style="background: #1e293b; color: #fff; justify-content: center;">
+        <span style="font-weight: 600;">🤖 Google OR-Tools CP-SAT Solver Running...</span>
+      </div>
+      <div class="modal-body" style="padding: 24px 20px;">
+        <div style="font-size: 36px; font-weight: 800; color: #2563eb;" id="solver-progress-pct">15%</div>
+        
+        <div class="solver-progress-container">
+          <div id="solver-progress-fill" class="solver-progress-bar" style="width: 15%;"></div>
+        </div>
+
+        <div class="solver-status-box" style="margin-top: 16px;">
+          <div class="solver-pulse-dot"></div>
+          <div id="solver-dynamic-status-text" style="flex: 1; text-align: left;">Formulating integer decision variables across 4 departments & 32 staff...</div>
+        </div>
+
+        <div style="margin-top: 14px; font-size: 11px; color: var(--text-muted);">
+          Elapsed: <b id="solver-elapsed-sec">0.8s</b> &bull; Target Time Limit: <b id="solver-timeout-limit">15s</b>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Find & Replace -->
+  <div id="modal-find-replace" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 520px;">
+      <div class="modal-header">
+        <span>🔍 Find & Replace Shift Codes</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+        <label>
+          <span class="form-label">Find Shift / Status:</span>
+          <select id="fr-find-select" class="select-input" style="width: 100%;">
+            <option value="NIGHT">NIGHT (Night Shift)</option>
+            <option value="MORN">MORN (Morning Shift)</option>
+            <option value="EVE">EVE (Evening Shift)</option>
+            <option value="OFF">OFF (Day Off)</option>
+            <option value="VAC">VAC (Vacation / Leave)</option>
+            <option value="DO">DO (Regular Day Off)</option>
+          </select>
+        </label>
+
+        <label>
+          <span class="form-label">Replace With:</span>
+          <select id="fr-replace-select" class="select-input" style="width: 100%;">
+            <option value="MORN">MORN (Morning Shift)</option>
+            <option value="EVE">EVE (Evening Shift)</option>
+            <option value="NIGHT">NIGHT (Night Shift)</option>
+            <option value="OFF">OFF (Set as Day OFF / Clear)</option>
+            <option value="Coff">Coff (Compensatory Off)</option>
+            <option value="VAC">VAC (Vacation)</option>
+          </select>
+        </label>
+
+        <label>
+          <span class="form-label">Scope Filter (Optional):</span>
+          <select id="fr-dept-select" class="select-input" style="width: 100%;">
+            <option value="">All Departments (Entire Roster)</option>
+          </select>
+        </label>
+
+        <div id="fr-result-message" style="font-size: 12px; color: var(--text-muted); min-height: 18px;"></div>
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button id="fr-clear-btn" class="btn btn-sm">Clear Highlights</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="fr-highlight-btn" class="btn btn-sm btn-primary">Highlight All Matches</button>
+          <button id="fr-replace-btn" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;">Replace All</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Vacations & Leaves Manager -->
+  <div id="modal-vacations" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 760px; width: 95%;">
+      <div class="modal-header">
+        <span>🏖️ Manage Employee Vacations, Comp Offs & Leaves</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        <!-- Add Leave Form -->
+        <div class="crud-form-card" style="margin-bottom: 14px;">
+          <h4 style="margin-bottom: 8px; font-size: 13px;">Record New Vacation / Day Off</h4>
+          <div style="display: grid; grid-template-columns: 2fr 1.5fr 1.5fr 1.5fr; gap: 8px; align-items: end;">
+            <label>
+              <span class="form-label">Employee:</span>
+              <select id="vac-emp-select" class="select-input" style="width: 100%;"></select>
+            </label>
+            <label>
+              <span class="form-label">Start Date:</span>
+              <input type="date" id="vac-start-date" class="text-input" style="width: 100%;">
+            </label>
+            <label>
+              <span class="form-label">End Date:</span>
+              <input type="date" id="vac-end-date" class="text-input" style="width: 100%;">
+            </label>
+            <label>
+              <span class="form-label">Leave Type:</span>
+              <select id="vac-type-select" class="select-input" style="width: 100%;">
+                <option value="VACATION">Vacation (Annual Leave)</option>
+                <option value="COFF">Comp Off (Coff)</option>
+                <option value="SICK">Sick Leave</option>
+                <option value="UNPAID">Unpaid Leave</option>
+              </select>
+            </label>
+          </div>
+          <div style="display: flex; gap: 8px; margin-top: 8px; align-items: end;">
+            <label style="flex: 1;">
+              <span class="form-label">Notes / Reason:</span>
+              <input type="text" id="vac-notes" class="text-input" placeholder="e.g. Approved holiday PTO" style="width: 100%;">
+            </label>
+            <button id="vac-add-btn" class="btn btn-sm btn-primary">+ Record Vacation</button>
+          </div>
+        </div>
+
+        <!-- Active Leaves Table -->
+        <div style="max-height: 280px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+          <table class="data-table" id="vacations-table">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Dates</th>
+                <th>Type</th>
+                <th>Notes</th>
+                <th style="text-align: right; width: 80px;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="vacations-table-body">
+              <!-- Dynamically rendered -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Advanced Settings -->
+  <div id="modal-advanced-settings" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 680px; width: 95%;">
+      <div class="modal-header">
+        <span>⚙️ Advanced Organizational & Shift Settings</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px; display: flex; flex-direction: column; gap: 16px;">
+        
+        <!-- Section 1: Custom Status & Absence Codes -->
+        <div class="crud-form-card">
+          <h4 style="margin-bottom: 6px; font-size: 13px;">Custom Status & Absence Code Names</h4>
+          <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+            Customize code abbreviations displayed in the schedule grid to match your organization's terminology:
+          </p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 8px;">
+            <label>
+              <span class="form-label">Regular Day Off:</span>
+              <input type="text" id="setting-code-off" class="text-input" value="OFF" style="width: 100%;">
+            </label>
+            <label>
+              <span class="form-label">Comp Off (Coff):</span>
+              <input type="text" id="setting-code-coff" class="text-input" value="Coff" style="width: 100%;">
+            </label>
+            <label>
+              <span class="form-label">Vacation / Leave:</span>
+              <input type="text" id="setting-code-vac" class="text-input" value="VAC" style="width: 100%;">
+            </label>
+            <label>
+              <span class="form-label">Sick Leave:</span>
+              <input type="text" id="setting-code-sick" class="text-input" value="SICK" style="width: 100%;">
+            </label>
+          </div>
+        </div>
+
+        <!-- Section 2: Shift Types Operating Setup -->
+        <div class="crud-form-card">
+          <h4 style="margin-bottom: 6px; font-size: 13px;">Shift Types Configuration (2-Shift vs 3-Shift)</h4>
+          <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+            View and adjust active shift types for your organization:
+          </p>
+          <div id="settings-shifts-list" style="display: flex; flex-direction: column; gap: 6px;">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Section 3: Solver & Generator Defaults -->
+        <div class="crud-form-card">
+          <h4 style="margin-bottom: 6px; font-size: 13px;">Roster Generator Defaults</h4>
+          <div style="display: flex; gap: 16px; margin-top: 6px;">
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+              <input type="radio" name="setting-gen-default" value="blank" id="setting-gen-blank"> Default to Blank Canvas
+            </label>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer;">
+              <input type="radio" name="setting-gen-default" value="existing" id="setting-gen-existing"> Default to Existing Data
+            </label>
+          </div>
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); margin-top: 8px; cursor: pointer;">
+            <input type="checkbox" id="setting-remember-mode"> Bypass confirmation prompt and use default mode automatically
+          </label>
+        </div>
+
+      </div>
+      <div class="modal-footer" style="justify-content: space-between;">
+        <button id="save-settings-btn" class="btn btn-sm btn-primary">Save Settings</button>
+        <button class="btn btn-sm close-modal">Close</button>
       </div>
     </div>
   </div>

@@ -36,32 +36,40 @@ The automated test suite was executed across all layers using `pytest`:
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.7.0
 rootdir: C:\Users\HEllo\Roster_planner
-collected 15 items
+collected 19 items
 
-tests/api/test_api_roster.py::test_full_roster_generation_and_export_lifecycle PASSED [  6%]
-tests/api/test_crud_and_carryover.py::test_department_crud_and_color_customization PASSED [ 13%]
-tests/api/test_crud_and_carryover.py::test_employee_crud_lifecycle PASSED [ 20%]
-tests/api/test_crud_and_carryover.py::test_previous_month_carryover_and_trailing_shifts PASSED [ 26%]
-tests/api/test_mcp_tools.py::test_mcp_tools_and_execution PASSED         [ 33%]
-tests/solver/test_floating_absorption.py::test_vacation_absorption_via_floating PASSED [ 40%]
-tests/solver/test_rest_ergonomics.py::test_ergonomic_rest_and_rotation_invariants PASSED [ 46%]
-tests/solver/test_shortage_deficit.py::test_extreme_workforce_starvation PASSED [ 53%]
-tests/ui/test_ui_interactive_crawler.py::test_audit_all_buttons_bound_in_app_js PASSED [ 60%]
-tests/ui/test_ui_interactive_crawler.py::test_crawler_executes_all_button_backend_endpoints PASSED [ 66%]
-tests/unit/test_import.py::test_template_generation PASSED               [ 73%]
-tests/unit/test_import.py::test_csv_validation_duplicate_code PASSED     [ 80%]
-tests/unit/test_rules.py::test_forbidden_transition_night_to_morning PASSED [ 86%]
-tests/unit/test_rules.py::test_permitted_transition_morning_to_night PASSED [ 93%]
+tests/api/test_adv_features.py::test_dedicated_regular_days_off_enforcement PASSED [  5%]
+tests/api/test_adv_features.py::test_vacation_leave_crud_and_grid_representation PASSED [ 10%]
+tests/api/test_adv_features.py::test_find_and_replace_shift_codes PASSED [ 15%]
+tests/api/test_adv_features.py::test_system_settings_and_shift_customization PASSED [ 21%]
+tests/api/test_api_roster.py::test_full_roster_generation_and_export_lifecycle PASSED [ 26%]
+tests/api/test_crud_and_carryover.py::test_department_crud_and_color_customization PASSED [ 31%]
+tests/api/test_crud_and_carryover.py::test_employee_crud_lifecycle PASSED [ 36%]
+tests/api/test_crud_and_carryover.py::test_previous_month_carryover_and_trailing_shifts PASSED [ 42%]
+tests/api/test_mcp_tools.py::test_mcp_tools_and_execution PASSED         [ 47%]
+tests/solver/test_floating_absorption.py::test_vacation_absorption_via_floating PASSED [ 52%]
+tests/solver/test_rest_ergonomics.py::test_ergonomic_rest_and_rotation_invariants PASSED [ 57%]
+tests/solver/test_shortage_deficit.py::test_extreme_workforce_starvation PASSED [ 63%]
+tests/ui/test_ui_interactive_crawler.py::test_audit_all_buttons_bound_in_app_js PASSED [ 68%]
+tests/ui/test_ui_interactive_crawler.py::test_crawler_executes_all_button_backend_endpoints PASSED [ 73%]
+tests/unit/test_import.py::test_template_generation PASSED               [ 78%]
+tests/unit/test_import.py::test_csv_validation_duplicate_code PASSED     [ 84%]
+tests/unit/test_rules.py::test_forbidden_transition_night_to_morning PASSED [ 89%]
+tests/unit/test_rules.py::test_permitted_transition_morning_to_night PASSED [ 94%]
 tests/unit/test_rules.py::test_consecutive_days_violation PASSED         [100%]
 
-====================== 15 passed, 0 failures in 13.03s ======================
+====================== 19 passed, 0 failures in 15.13s ======================
 ```
 
 #### Test Suite Highlights
-1. **Interactive Button Crawler Audit (`test_audit_all_buttons_bound_in_app_js` & `test_crawler_executes_all_button_backend_endpoints`):** Automated HTML parser crawls every `<button>` element in the application and guarantees that 100% of buttons have active, non-noop event handlers and functioning backend API routes.
-2. **Infeasibility Shield Verified (`test_extreme_workforce_starvation`):** Under severe workforce depletion (1 employee vs. 28 required shifts), the solver did not crash; it generated a valid schedule with exactly 23 logged deficits and zero double-bookings.
-3. **Dynamic Vacation Absorption Verified (`test_vacation_absorption_via_floating`):** When Department A was crippled by 100% staff leave, eligible floaters from Department B were automatically assigned to cover Department A's demand, achieving 0 deficits.
-4. **Ergonomic Inviolability Verified (`test_ergonomic_rest_and_rotation_invariants`):** In 14-day continuous operations, zero forbidden rotations (Night followed by Morning) occurred, and rolling 7-day rest rules were strictly respected.
+1. **Dedicated Regular Days Off Enforced (`test_dedicated_regular_days_off_enforcement`):** Verifies that employees assigned recurring days off (e.g. Saturdays & Sundays, or Mondays & Tuesdays) are mathematically locked off by CP-SAT without violating required ward coverage.
+2. **Approved Vacation & Leave Integration (`test_vacation_leave_crud_and_grid_representation`):** Verifies vacation record lifecycle (creation, deletion, and rendering in the schedule grid with dedicated `🏖️ VAC` badges).
+3. **Find and Replace Engine (`test_find_and_replace_shift_codes`):** Verifies global and department-scoped batch substitution of shifts (e.g. converting NIGHT to MORN, or clearing shifts to OFF).
+4. **Custom Settings & Shift Regimes (`test_system_settings_and_shift_customization`):** Verifies configuration persistence for customizable day off codes (DO, Coff, VAC, SICK), generator mode defaults, and active shift type adjustments (2-shift vs 3-shift).
+5. **Interactive Button Crawler Audit (`test_audit_all_buttons_bound_in_app_js` & `test_crawler_executes_all_button_backend_endpoints`):** Automated HTML parser crawls every `<button>` element in the application and guarantees that 100% of buttons have active, non-noop event handlers and functioning backend API routes.
+6. **Infeasibility Shield Verified (`test_extreme_workforce_starvation`):** Under severe workforce depletion (1 employee vs. 28 required shifts), the solver did not crash; it generated a valid schedule with exactly 23 logged deficits and zero double-bookings.
+7. **Dynamic Vacation Absorption Verified (`test_vacation_absorption_via_floating`):** When Department A was crippled by 100% staff leave, eligible floaters from Department B were automatically assigned to cover Department A's demand, achieving 0 deficits.
+8. **Ergonomic Inviolability Verified (`test_ergonomic_rest_and_rotation_invariants`):** In 14-day continuous operations, zero forbidden rotations (Night followed by Morning) occurred, and rolling 7-day rest rules were strictly respected.
 5. **Direct Org CRUD & Color Palettes Verified (`test_department_crud_and_color_customization`):** Runtime creation, live hex color customization, and safe deletion of departments with cascade protection.
 6. **Month-to-Month Carryover Verified (`test_previous_month_carryover_and_trailing_shifts`):** Trailing 3-day shift history, trailing hours, and prior night shift warnings correctly carried across consecutive month planning horizons.
 4. **Direct Org CRUD & Color Palettes Verified (`test_department_crud_and_color_customization`):** Runtime creation, live hex color customization, and safe deletion of departments with cascade protection.

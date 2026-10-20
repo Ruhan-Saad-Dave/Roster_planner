@@ -3,7 +3,7 @@
 [![Python 3.12](https://img.shields.io/badge/Python-3.12-blue.svg)](https://www.python.org/)
 [![Optimization: Google OR-Tools CP-SAT](https://img.shields.io/badge/Optimization-OR--Tools%20CP--SAT-green.svg)](https://developers.google.com/optimization)
 [![Architecture: Standalone Offline](https://img.shields.io/badge/Architecture-100%25%20Offline-success.svg)](#)
-[![Test Coverage: 15/15 Passed](https://img.shields.io/badge/Tests-15%2F15%20Passing-brightgreen.svg)](#)
+[![Test Coverage: 19/19 Passed](https://img.shields.io/badge/Tests-19%2F19%20Passing-brightgreen.svg)](#)
 
 **LocalRoster v2** is a production-grade, mathematically optimal, 100% offline workforce roster scheduling and management system. Built specifically for high-stakes operational environments (such as hospitals, clinics, emergency services, and 24/7 facilities), it pairs Google OR-Tools CP-SAT constraint programming with an Excel-inspired desktop interface that runs entirely on local machines without cloud dependencies or CDN calls.
 
@@ -14,27 +14,32 @@
 ### 1. Mathematical Optimization Engine (Google OR-Tools CP-SAT)
 * **Zero Unhandled Infeasibility:** Uses integer deficit slack variables to guarantee that an optimal, executable schedule is always produced, even under severe workforce starvation.
 * **Ergonomic Safety Invariants:** Strict enforcement of maximum consecutive working days (e.g., 5-day limit), mandatory minimum rest intervals (16 hours post-night shifts), forbidden backward rotations (Night $\to$ Morning is strictly blocked), and rolling 7-day rest guarantees.
-* **Cross-Ward Floater Allocation:** Employees can float across multiple departments based on preference ranks and eligibility matrices.
+* **Dedicated Regular Days Off:** Supports fixed recurring days off per worker (e.g. Saturdays & Sundays, Mondays & Tuesdays, or Custom), automatically locked as hard days off in CP-SAT.
+* **Approved Vacations & PTO Absorption:** Integrates employee leaves directly into the solver; automatically absorbs vacancies via eligible cross-ward floaters.
 * **Multi-Variant Generation & Comparison:** Solves multiple candidate schedules with varying objective weights (Standard Balanced, Float-Averse, Maximum Preference) for side-by-side manager comparison and 1-click promotion.
 * **Pre-Filling & "Solve Remaining":** Managers can pre-lock specific shift assignments or days off (e.g. employee vacation requests), and the solver will dynamically optimize all remaining blank slots around them.
 
-### 2. Excel-Style Desktop Interface & Workflow
-* **Excel-Style Ribbon Navigation:** Organized into clear operational tabs:
-  - **`📋 Schedule & Solve`:** Roster generation, solve remaining slots, prefill toggles, variant comparisons, and view switches.
-  - **`🏢 Organization & Staff`:** In-app department operating regime setup (24/7 vs. Weekdays-only), staff contracts, and CSV/Excel bulk import.
-  - **`📊 Reports & Exports`:** One-click downloads of formatted multi-tab Excel workbooks (`.xlsx`) and printable landscape vector PDFs.
-  - **`👁️ View Options`:** Sidebar toggles and splitter pane reset controls.
-* **Excel-Style Bottom Status Bar:**
-  - Real-time health badge (`🟢 100% Staffed`), active plan telemetry, and department/staff counts.
-  - Quick view mode shortcuts (Staff-Centric, Slot-Centric, Workload Audit Scorecard).
-  - Dynamic **Zoom Engine**: continuous slider (65% to 160%), step buttons `[−]` / `[+]`, and one-click `[100%]` reset.
-* **Dual Roster Views:**
-  - **Staff-Centric View:** Employees as rows, calendar dates as columns, sticky headers, and department color badges.
-  - **Slot-Centric View:** Coverage requirements per ward and shift slot with assigned worker badges and deficit indicators.
-  - **Workload Audit Scorecard:** Automatic tracking of total scheduled hours, overtime variance, night shift distribution, and weekend rest equity.
-* **Resizable Splitters & Responsive Panes:** Left department filters, central matrix grid, and right-hand shift inspector can be fluidly resized via drag handles.
-* **Month-to-Month Carryover:** Full context awareness of trailing shifts from the preceding month, highlighting prior night shifts on Day 1 to avoid turnaround fatigue.
-* **First-Time Manager Onboarding Wizard:** Modal on initial launch offering instant choice between CSV template import or pre-loaded hospital template.
+### 2. High-Productivity Main Workspace & Excel-Style Interaction
+* **Active Working Cell & Crosshairs:** Clicking any cell highlights it with a radiant blue selection ring and highlights the active employee row and calendar date column for effortless tracking across 30 days.
+* **Visual Conflict Indicators:** Highlights hazardous shift rotations (e.g., Night to Morning turnarounds) and consecutive day streaks with pulsing red `⚠️` conflict badges and explanatory tooltips.
+* **Empty Cell Recognition:** Unstaffed/blank slots feature distinct subtle dashed borders so managers instantly spot scheduling gaps.
+* **Native Keyboard Navigation & Cell Clearing:**
+  - Press `Delete` or `Backspace` to instantly empty a selected cell / set to Day OFF.
+  - Navigate effortlessly using `Arrow Keys` (`←`, `→`, `↑`, `↓`), `Tab` / `Shift+Tab`, and `Enter` / `Shift+Enter` just like Excel!
+* **Find and Replace Engine:** Search shift codes across the whole roster or filtered by department. Use **Highlight All Matches** for bright animated yellow search highlights, or **Replace All** to substitute shifts across the plan.
+* **Hero Generate Flow with Mode Choice & Engaging AI Progress:**
+  - Prominent **⚡ + Generate Roster** call-to-action button.
+  - Prompts manager: **⚡ Generate from Blank Canvas** vs **📌 Generate Using Existing Data** (with "Remember this setting" option).
+  - Engaging solver progress modal: animated progress bar (0% to 100%), elapsed timer, and live status messages (*"Formulating integer variables...", "Validating ergonomic rest intervals...", "Locking approved vacations...", "Balancing weekend equity...", "Finalizing conflict-free roster..."*).
+
+### 3. Customizable Organization & Advanced Settings
+* **Custom Shift & Absence Terminology:** Customize codes in Advanced Settings to match organizational language (e.g. `DO` for regular day off, `Coff` for compensatory off, `VAC` for vacation, `SICK` for sick leave).
+* **Flexible Shift Configurations:** Supports 2-shift operations (12h Day / 12h Night), 3-shift operations (Morning / Evening / Night), or custom dynamic durations.
+* **Dedicated Vacations & Leaves Manager:** Full in-app tracking of employee vacation schedules, compensatory time off, and sick leave with one-click deletion.
+* **Excel-Style Ribbon Navigation & Bottom Status Bar:**
+  - Clean operational tabs: `📋 Schedule & Solve`, `🏢 Organization & Staff`, `📊 Reports & Exports`, `👁️ View Options`.
+  - Bottom Status Bar with real-time health indicator, active plan telemetry, and interactive Zoom engine (65% to 160%).
+* **Resizable Splitters & Month Carryover:** Draggable divider handles with persistence and trailing context from the previous month.
 
 ### 3. Standards, Formats & Integration
 * **Model Context Protocol (MCP) Server:** Native endpoints allowing local and online AI agents to audit rosters, run queries, and schedule shifts with real-time constraint validation.

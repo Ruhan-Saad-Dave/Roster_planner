@@ -6,7 +6,7 @@ from src.db.session import get_db
 from src.db.models import Department, ShiftType, DepartmentRequirement
 from src.api.schemas import (
     DepartmentCreate, DepartmentUpdate, DepartmentResponse,
-    ShiftTypeCreate, ShiftTypeResponse,
+    ShiftTypeCreate, ShiftTypeUpdate, ShiftTypeResponse,
     UpdateRequirementsRequest
 )
 
@@ -93,6 +93,37 @@ def create_shift_type(shift_in: ShiftTypeCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Shift type code already exists.")
     shift = ShiftType(**shift_in.model_dump())
     db.add(shift)
+    db.commit()
+    db.refresh(shift)
+    return shift
+
+@router.put("/shift-types/{shift_id}", response_model=ShiftTypeResponse)
+def update_shift_type(shift_id: int, shift_in: ShiftTypeUpdate, db: Session = Depends(get_db)):
+    shift = db.query(ShiftType).filter(ShiftType.id == shift_id).first()
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift type not found.")
+
+    if shift_in.code and shift_in.code != shift.code:
+        existing = db.query(ShiftType).filter(ShiftType.code == shift_in.code, ShiftType.id != shift_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Shift type code already taken.")
+        shift.code = shift_in.code
+
+    if shift_in.name is not None:
+        shift.name = shift_in.name
+    if shift_in.start_time is not None:
+        shift.start_time = shift_in.start_time
+    if shift_in.end_time is not None:
+        shift.end_time = shift_in.end_time
+    if shift_in.duration_hours is not None:
+        shift.duration_hours = shift_in.duration_hours
+    if shift_in.min_rest_hours_after is not None:
+        shift.min_rest_hours_after = shift_in.min_rest_hours_after
+    if shift_in.is_night_shift is not None:
+        shift.is_night_shift = shift_in.is_night_shift
+    if shift_in.is_active is not None:
+        shift.is_active = shift_in.is_active
+
     db.commit()
     db.refresh(shift)
     return shift

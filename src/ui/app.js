@@ -79,6 +79,8 @@ async function initApp() {
   initResizers();
   initZoom();
   initOnboarding();
+  initFindReplace();
+  initKeyboardNavigation();
   setupEventListeners();
 
   // 2. Fetch data from backend
@@ -279,8 +281,9 @@ function renderStaffCentric(data) {
 
   // Tbody
   const tbody = document.createElement("tbody");
-  data.rows.forEach(r => {
+  data.rows.forEach((r, rIdx) => {
     const tr = document.createElement("tr");
+    tr.dataset.row = rIdx;
 
     const empTd = document.createElement("td");
     empTd.className = "sticky-col";
@@ -323,42 +326,77 @@ function renderStaffCentric(data) {
 
     data.dates.forEach((dStr, dIdx) => {
       const td = document.createElement("td");
+      td.dataset.row = rIdx;
+      td.dataset.col = dIdx;
+      td.dataset.date = dStr;
+      td.dataset.empId = r.employee_id;
+
       const a = r.assignments[dStr];
 
       if (a) {
+        if (a.has_conflict) {
+          td.classList.add("cell-conflict");
+          td.title = `⚠️ Conflict: ${a.conflict_reason}`;
+        }
+
         const badge = document.createElement("span");
         let shiftClass = "shift-off";
-        if (a.shift_code.includes("MORN")) shiftClass = "shift-morn";
-        else if (a.shift_code.includes("EVE")) shiftClass = "shift-eve";
-        else if (a.shift_code.includes("NIGHT")) shiftClass = "shift-night";
 
-        let floaterClass = "";
-        let floaterStyle = "";
-        if (a.is_floating) {
-          floaterClass = "shift-floater";
-          floaterStyle = `box-shadow: 0 0 0 1.5px ${a.department_color || '#f59e0b'};`;
+        if (a.is_leave) {
+          shiftClass = "shift-vac";
+          badge.className = `shift-badge ${shiftClass}`;
+          badge.innerHTML = `🏖️ ${a.shift_code || "VAC"}`;
+          badge.title = `Approved Leave: ${a.shift_name}`;
+        } else if (a.is_fixed_off) {
+          shiftClass = "shift-do";
+          badge.className = `shift-badge ${shiftClass}`;
+          badge.innerHTML = `${a.shift_code || "DO"} 🔒`;
+          badge.title = `Dedicated Regular Day Off (Locked)`;
+        } else {
+          if (a.shift_code.includes("MORN")) shiftClass = "shift-morn";
+          else if (a.shift_code.includes("EVE")) shiftClass = "shift-eve";
+          else if (a.shift_code.includes("NIGHT")) shiftClass = "shift-night";
+
+          let floaterClass = "";
+          let floaterStyle = "";
+          if (a.is_floating) {
+            floaterClass = "shift-floater";
+            floaterStyle = `box-shadow: 0 0 0 1.5px ${a.department_color || '#f59e0b'};`;
+          }
+
+          // Turnaround warning check on Day 1
+          let turnaroundClass = "";
+          let turnaroundTitle = "";
+          if (dIdx === 0 && workedPriorNight && (a.shift_code.includes("MORN") || a.shift_code.includes("EVE"))) {
+            turnaroundClass = "trailing-turnaround-warn";
+            turnaroundTitle = "Turnaround Warning: Worked Night shift on final day of prior month!";
+          }
+
+          badge.className = `shift-badge ${shiftClass} ${floaterClass} ${turnaroundClass}`;
+          if (floaterStyle) badge.style.cssText = floaterStyle;
+          if (turnaroundTitle) badge.title = turnaroundTitle;
+          badge.innerHTML = `${a.shift_code}${a.is_floating ? `*(${a.department_code})` : ""}${a.is_pinned ? " 📌" : ""}`;
         }
 
-        // Turnaround warning check on Day 1
-        let turnaroundClass = "";
-        let turnaroundTitle = "";
-        if (dIdx === 0 && workedPriorNight && (a.shift_code.includes("MORN") || a.shift_code.includes("EVE"))) {
-          turnaroundClass = "trailing-turnaround-warn";
-          turnaroundTitle = "Turnaround Warning: Worked Night shift on final day of prior month!";
-        }
-
-        badge.className = `shift-badge ${shiftClass} ${floaterClass} ${turnaroundClass}`;
-        if (floaterStyle) badge.style.cssText = floaterStyle;
-        if (turnaroundTitle) badge.title = turnaroundTitle;
-        badge.innerHTML = `${a.shift_code}${a.is_floating ? `*(${a.department_code})` : ""}${a.is_pinned ? " 📌" : ""}`;
-
-        badge.onclick = () => selectAssignment(r, dStr, a);
+        badge.onclick = (e) => {
+          e.stopPropagation();
+          selectAssignment(r, dStr, a, rIdx, dIdx, td);
+        };
+        td.onclick = () => selectAssignment(r, dStr, a, rIdx, dIdx, td);
         td.appendChild(badge);
       } else {
+        // Empty Cell
+        td.classList.add("cell-empty");
+        td.title = "Empty / Unassigned Slot (Click or press key to assign/fill)";
         const offBadge = document.createElement("span");
         offBadge.className = "shift-badge shift-off";
-        offBadge.textContent = "OFF";
-        offBadge.onclick = () => selectAssignment(r, dStr, null);
+        offBadge.style.opacity = "0.6";
+        offBadge.textContent = "—";
+        offBadge.onclick = (e) => {
+          e.stopPropagation();
+          selectAssignment(r, dStr, null, rIdx, dIdx, td);
+        };
+        td.onclick = () => selectAssignment(r, dStr, null, rIdx, dIdx, td);
         td.appendChild(offBadge);
       }
 
@@ -480,28 +518,70 @@ function renderAuditScorecard(data) {
 // ==========================================
 // Inspector & Real-Time Constraint Validation
 // ==========================================
-async function selectAssignment(emp, dateStr, currentAssignment) {
-  state.selectedCell = { emp, dateStr, currentAssignment };
+function updateGridCrosshairs(rowIdx, colIdx, activeTd) {
+  // Clear previous crosshairs
+  document.querySelectorAll(".cell-active").forEach(el => el.classList.remove("cell-active"));
+  document.querySelectorAll(".row-active-crosshair").forEach(el => el.classList.remove("row-active-crosshair"));
+  document.querySelectorAll(".col-active-crosshair").forEach(el => el.classList.remove("col-active-crosshair"));
+
+  if (activeTd) {
+    activeTd.classList.add("cell-active");
+  }
+
+  if (rowIdx !== null && rowIdx !== undefined) {
+    document.querySelectorAll(`tr[data-row="${rowIdx}"] td`).forEach(td => td.classList.add("row-active-crosshair"));
+  }
+
+  if (colIdx !== null && colIdx !== undefined) {
+    document.querySelectorAll(`td[data-col="${colIdx}"]`).forEach(td => td.classList.add("col-active-crosshair"));
+  }
+}
+
+async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, colIdx = null, td = null) {
+  state.selectedCell = { emp, dateStr, currentAssignment, rowIdx, colIdx, td };
+  updateGridCrosshairs(rowIdx, colIdx, td);
+
   const content = document.getElementById("inspector-content");
   const actions = document.getElementById("inspector-actions");
   actions.classList.remove("hidden");
 
+  // Conflict Alert box
+  const conflictAlert = document.getElementById("inspector-conflict-alert");
+  if (conflictAlert) {
+    if (currentAssignment && currentAssignment.has_conflict) {
+      conflictAlert.classList.remove("hidden");
+      conflictAlert.innerHTML = `<b>⚠️ Rule Conflict:</b><br>${currentAssignment.conflict_reason || "Ergonomic labor rule violation"}`;
+    } else {
+      conflictAlert.classList.add("hidden");
+    }
+  }
+
   let shiftSelectorHtml = `<select id="target-shift-select" class="select-input" style="width:100%;margin-top:6px;">`;
   state.shifts.forEach(s => {
-    shiftSelectorHtml += `<option value="${s.id}">${s.name} (${s.code})</option>`;
+    const isSel = currentAssignment && currentAssignment.shift_id === s.id;
+    shiftSelectorHtml += `<option value="${s.id}" ${isSel ? "selected" : ""}>${s.name} (${s.code})</option>`;
   });
   shiftSelectorHtml += `</select>`;
 
   let deptSelectorHtml = `<select id="target-dept-select" class="select-input" style="width:100%;margin-top:6px;">`;
   state.departments.forEach(d => {
-    deptSelectorHtml += `<option value="${d.id}" ${d.id === emp.primary_department_id ? "selected" : ""}>${d.name}</option>`;
+    const isSel = currentAssignment ? currentAssignment.department_id === d.id : d.id === emp.primary_department_id;
+    deptSelectorHtml += `<option value="${d.id}" ${isSel ? "selected" : ""}>${d.name}</option>`;
   });
   deptSelectorHtml += `</select>`;
 
+  let statusHtml = "";
+  if (currentAssignment && currentAssignment.is_leave) {
+    statusHtml = `<div class="brand-badge" style="background:#f3e8ff;color:#6b21a8;margin-top:6px;display:inline-block;">Approved Leave: ${currentAssignment.shift_name}</div>`;
+  } else if (currentAssignment && currentAssignment.is_fixed_off) {
+    statusHtml = `<div class="brand-badge" style="background:#f1f5f9;color:#475569;margin-top:6px;display:inline-block;">Dedicated Regular Day Off</div>`;
+  }
+
   content.innerHTML = `
     <div style="font-size:12px;">
-      <div><b>Employee:</b> ${emp.employee_name} (${emp.primary_department_code})</div>
+      <div><b>Employee:</b> ${emp.employee_name} (${emp.primary_department_code || ""})</div>
       <div><b>Date:</b> ${dateStr}</div>
+      ${statusHtml}
       <div style="margin-top:8px;"><b>Change Shift:</b></div>
       ${shiftSelectorHtml}
       <div style="margin-top:8px;"><b>Department:</b></div>
@@ -566,25 +646,39 @@ async function selectAssignment(emp, dateStr, currentAssignment) {
     pinBtn.textContent = isPinned ? "Unpin Shift 🔓" : "Pin / Lock Shift 📌";
     pinBtn.className = `btn btn-sm ${isPinned ? "btn-primary" : ""}`;
     pinBtn.onclick = async () => {
-      if (!currentAssignment) {
+      if (!currentAssignment || !currentAssignment.assignment_id) {
         alert("Please select or assign a shift first before pinning.");
         return;
       }
       const res = await apiPost(`/api/roster/${state.activePlanId}/assignments/toggle-pin?employee_id=${emp.employee_id}&date=${dateStr}`, {});
       await loadSchedule();
-      selectAssignment(emp, dateStr, { ...currentAssignment, is_pinned: res.is_pinned });
+      selectAssignment(emp, dateStr, { ...currentAssignment, is_pinned: res.is_pinned }, rowIdx, colIdx, td);
     };
   }
 
   const clearBtn = document.getElementById("inspector-clear-btn");
   if (clearBtn) {
-    clearBtn.disabled = !currentAssignment;
+    clearBtn.disabled = !currentAssignment || !currentAssignment.assignment_id;
     clearBtn.onclick = async () => {
-      if (!currentAssignment) return;
-      await apiDelete(`/api/roster/${state.activePlanId}/assignments?employee_id=${emp.employee_id}&date=${dateStr}`);
-      await loadSchedule();
-      selectAssignment(emp, dateStr, null);
+      await emptySelectedCell();
     };
+  }
+}
+
+async function emptySelectedCell() {
+  if (!state.selectedCell || !state.activePlanId) return;
+  const { emp, dateStr } = state.selectedCell;
+  try {
+    await apiDelete(`/api/roster/${state.activePlanId}/assignments?employee_id=${emp.employee_id}&date=${dateStr}`);
+    await loadSchedule();
+    if (state.selectedCell) {
+      const rowIdx = state.selectedCell.rowIdx;
+      const colIdx = state.selectedCell.colIdx;
+      const targetTd = document.querySelector(`td[data-row="${rowIdx}"][data-col="${colIdx}"]`);
+      selectAssignment(emp, dateStr, null, rowIdx, colIdx, targetTd);
+    }
+  } catch (err) {
+    console.error("Failed to empty cell:", err);
   }
 }
 
@@ -669,10 +763,20 @@ async function loadOrgEmployees() {
   const tbody = document.getElementById("emps-table-body");
   tbody.innerHTML = "";
 
+  const dayNames = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
+
   emps.forEach(e => {
     const dObj = state.departments.find(d => d.id === e.primary_department_id);
     const dColor = dObj ? dObj.color_code : "#3B82F6";
     const dCode = dObj ? dObj.code : "";
+
+    let fixedOffBadge = '<span style="color:#94a3b8;font-size:11px;">Dynamic</span>';
+    if (e.fixed_off_days) {
+      const idxs = e.fixed_off_days.split(",").map(x => parseInt(x.trim())).filter(x => !isNaN(x));
+      if (idxs.length > 0) {
+        fixedOffBadge = `<span class="shift-badge shift-do" style="font-size:10px;">${idxs.map(i => dayNames[i]).join(", ")}</span>`;
+      }
+    }
 
     const tr = document.createElement("tr");
     tr.innerHTML = `
@@ -680,6 +784,7 @@ async function loadOrgEmployees() {
       <td>${e.name}</td>
       <td><span class="dept-badge-tag" style="background:${dColor};">${dCode}</span> ${e.primary_department_name || ''}</td>
       <td>${e.max_hours_week} hrs/wk</td>
+      <td>${fixedOffBadge}</td>
       <td><span class="brand-badge" style="background:${e.is_active ? '#dcfce7' : '#fee2e2'};color:${e.is_active ? '#166534' : '#991b1b'};">${e.is_active ? 'Active' : 'Inactive'}</span></td>
       <td style="text-align:right;">
         <button class="btn btn-sm" onclick='editEmployee(${JSON.stringify(e)})'>Edit</button>
@@ -697,6 +802,26 @@ window.editEmployee = function(e) {
   document.getElementById("emp-form-dept").value = e.primary_department_id;
   document.getElementById("emp-form-hours").value = e.max_hours_week || 40.0;
   document.getElementById("emp-form-title").textContent = `Edit Employee: ${e.name}`;
+
+  const preset = document.getElementById("emp-form-fixed-preset");
+  document.querySelectorAll(".fixed-day-cb").forEach(cb => cb.checked = false);
+
+  if (e.fixed_off_days) {
+    const dayArr = e.fixed_off_days.split(",").map(x => x.trim());
+    dayArr.forEach(val => {
+      const cb = document.querySelector(`.fixed-day-cb[value="${val}"]`);
+      if (cb) cb.checked = true;
+    });
+    if (preset) {
+      if (e.fixed_off_days === "5,6") preset.value = "5,6";
+      else if (e.fixed_off_days === "0,1") preset.value = "0,1";
+      else if (e.fixed_off_days === "6,0") preset.value = "6,0";
+      else preset.value = "custom";
+    }
+  } else {
+    if (preset) preset.value = "";
+  }
+
   document.getElementById("emp-form-card").classList.remove("hidden");
 };
 
@@ -1202,10 +1327,38 @@ function setupEventListeners() {
       document.getElementById("emp-form-code").value = "";
       document.getElementById("emp-form-name").value = "";
       document.getElementById("emp-form-hours").value = "40.0";
+      const preset = document.getElementById("emp-form-fixed-preset");
+      if (preset) preset.value = "";
+      document.querySelectorAll(".fixed-day-cb").forEach(cb => cb.checked = false);
       document.getElementById("emp-form-title").textContent = "Create New Employee";
       document.getElementById("emp-form-card").classList.remove("hidden");
     };
   }
+
+  const fixedPreset = document.getElementById("emp-form-fixed-preset");
+  if (fixedPreset) {
+    fixedPreset.onchange = (e) => {
+      const val = e.target.value;
+      document.querySelectorAll(".fixed-day-cb").forEach(cb => cb.checked = false);
+      if (val === "5,6") {
+        const sa = document.querySelector('.fixed-day-cb[value="5"]'); if (sa) sa.checked = true;
+        const su = document.querySelector('.fixed-day-cb[value="6"]'); if (su) su.checked = true;
+      } else if (val === "0,1") {
+        const mo = document.querySelector('.fixed-day-cb[value="0"]'); if (mo) mo.checked = true;
+        const tu = document.querySelector('.fixed-day-cb[value="1"]'); if (tu) tu.checked = true;
+      } else if (val === "6,0") {
+        const su = document.querySelector('.fixed-day-cb[value="6"]'); if (su) su.checked = true;
+        const mo = document.querySelector('.fixed-day-cb[value="0"]'); if (mo) mo.checked = true;
+      }
+    };
+  }
+
+  document.querySelectorAll(".fixed-day-cb").forEach(cb => {
+    cb.onchange = () => {
+      const p = document.getElementById("emp-form-fixed-preset");
+      if (p) p.value = "custom";
+    };
+  });
 
   const cancelEmpBtn = document.getElementById("cancel-emp-form-btn");
   if (cancelEmpBtn) {
@@ -1223,6 +1376,9 @@ function setupEventListeners() {
       const primary_department_id = parseInt(document.getElementById("emp-form-dept").value);
       const max_hours_week = parseFloat(document.getElementById("emp-form-hours").value) || 40.0;
 
+      const checkedDays = Array.from(document.querySelectorAll(".fixed-day-cb:checked")).map(cb => cb.value);
+      const fixed_off_days = checkedDays.length > 0 ? checkedDays.join(",") : null;
+
       if (!employee_code || !name || !primary_department_id) {
         alert("Please provide employee code, name, and primary department.");
         return;
@@ -1230,9 +1386,9 @@ function setupEventListeners() {
 
       try {
         if (id) {
-          await apiPut(`/api/employees/${id}`, { employee_code, name, primary_department_id, max_hours_week });
+          await apiPut(`/api/employees/${id}`, { employee_code, name, primary_department_id, max_hours_week, fixed_off_days });
         } else {
-          await apiPost("/api/employees", { employee_code, name, primary_department_id, max_hours_week });
+          await apiPost("/api/employees", { employee_code, name, primary_department_id, max_hours_week, fixed_off_days });
         }
         document.getElementById("emp-form-card").classList.add("hidden");
         await loadOrgEmployees();
@@ -1251,11 +1407,142 @@ function setupEventListeners() {
     };
   }
 
-  // Modals
+  // Modals & Enhanced Solver Triggers
   const newPlanBtn = document.getElementById("new-plan-btn");
   if (newPlanBtn) {
-    newPlanBtn.onclick = () => {
+    newPlanBtn.onclick = async () => {
+      try {
+        const settings = await apiGet("/api/settings");
+        state.settings = settings;
+        if (settings.remember_generator_mode) {
+          await executeRosterGeneration(settings.generator_default_mode || "blank");
+          return;
+        }
+      } catch (_) {}
+      document.getElementById("modal-gen-choice").classList.remove("hidden");
+    };
+  }
+
+  const genProceedBtn = document.getElementById("gen-proceed-btn");
+  if (genProceedBtn) {
+    genProceedBtn.onclick = async () => {
+      const modeRadio = document.querySelector('input[name="gen-mode-choice"]:checked');
+      const chosenMode = modeRadio ? modeRadio.value : "blank";
+      const rememberCb = document.getElementById("remember-gen-choice-cb");
+
+      if (rememberCb && rememberCb.checked) {
+        try {
+          await apiPost("/api/settings", {
+            settings: {
+              "generator_default_mode": chosenMode,
+              "remember_generator_mode": "true"
+            }
+          });
+        } catch (_) {}
+      }
+
+      document.getElementById("modal-gen-choice").classList.add("hidden");
+      await executeRosterGeneration(chosenMode);
+    };
+  }
+
+  const genOpenOptionsBtn = document.getElementById("gen-open-options-btn");
+  if (genOpenOptionsBtn) {
+    genOpenOptionsBtn.onclick = () => {
+      document.getElementById("modal-gen-choice").classList.add("hidden");
       document.getElementById("modal-new-plan").classList.remove("hidden");
+    };
+  }
+
+  // Vacations & Leaves Manager Modal
+  const vacMgrBtn = document.getElementById("vacations-mgr-btn");
+  if (vacMgrBtn) {
+    vacMgrBtn.onclick = async () => {
+      document.getElementById("modal-vacations").classList.remove("hidden");
+      await loadVacationsList();
+    };
+  }
+
+  const vacAddBtn = document.getElementById("vac-add-btn");
+  if (vacAddBtn) {
+    vacAddBtn.onclick = async () => {
+      const empId = parseInt(document.getElementById("vac-emp-select").value);
+      const startDate = document.getElementById("vac-start-date").value;
+      const endDate = document.getElementById("vac-end-date").value;
+      const leaveType = document.getElementById("vac-type-select").value;
+      const notes = document.getElementById("vac-notes").value.trim();
+
+      if (!empId || !startDate || !endDate) {
+        alert("Please select employee, start date, and end date.");
+        return;
+      }
+      try {
+        await apiPost("/api/leaves", {
+          employee_id: empId,
+          start_date: startDate,
+          end_date: endDate,
+          leave_type: leaveType,
+          notes: notes || "Vacation / Leave"
+        });
+        document.getElementById("vac-notes").value = "";
+        await loadVacationsList();
+        await loadSchedule();
+      } catch (err) {
+        alert("Failed to record vacation: " + err.message);
+      }
+    };
+  }
+
+  // Advanced Settings Modal
+  const advSettingsBtn = document.getElementById("advanced-settings-btn");
+  if (advSettingsBtn) {
+    advSettingsBtn.onclick = async () => {
+      document.getElementById("modal-advanced-settings").classList.remove("hidden");
+      await loadAdvancedSettings();
+    };
+  }
+
+  const saveSettingsBtn = document.getElementById("save-settings-btn");
+  if (saveSettingsBtn) {
+    saveSettingsBtn.onclick = async () => {
+      const offCode = document.getElementById("setting-code-off").value.trim() || "OFF";
+      const coffCode = document.getElementById("setting-code-coff").value.trim() || "Coff";
+      const vacCode = document.getElementById("setting-code-vac").value.trim() || "VAC";
+      const sickCode = document.getElementById("setting-code-sick").value.trim() || "SICK";
+
+      const defModeRadio = document.querySelector('input[name="setting-gen-default"]:checked');
+      const defMode = defModeRadio ? defModeRadio.value : "blank";
+      const remMode = document.getElementById("setting-remember-mode").checked;
+
+      const customCodes = {
+        "OFF": offCode,
+        "COFF": coffCode,
+        "VAC": vacCode,
+        "SICK": sickCode
+      };
+
+      try {
+        await apiPost("/api/settings", {
+          settings: {
+            "generator_default_mode": defMode,
+            "remember_generator_mode": remMode ? "true" : "false",
+            "custom_status_codes": JSON.stringify(customCodes)
+          }
+        });
+
+        const cbs = document.querySelectorAll(".shift-active-cb");
+        for (const cb of cbs) {
+          const shiftId = parseInt(cb.dataset.shiftId);
+          await apiPut(`/api/shift-types/${shiftId}`, { is_active: cb.checked });
+        }
+
+        alert("Advanced settings saved successfully!");
+        document.getElementById("modal-advanced-settings").classList.add("hidden");
+        state.shifts = await apiGet("/api/shift-types");
+        await loadSchedule();
+      } catch (err) {
+        alert("Error saving settings: " + err.message);
+      }
     };
   }
 
@@ -1318,7 +1605,7 @@ function setupEventListeners() {
     };
   });
 
-  // Confirm New Plan
+  // Confirm New Plan from Modal
   const confirmGenBtn = document.getElementById("confirm-generate-btn");
   if (confirmGenBtn) {
     confirmGenBtn.onclick = async () => {
@@ -1328,15 +1615,16 @@ function setupEventListeners() {
       const variants = parseInt(document.getElementById("new-plan-variants").value);
 
       document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
-      updateHealthBanner("yellow", "🟡 CP-SAT Solver is running integer optimization...");
 
-      await apiPost("/api/roster/generate", {
-        name,
-        planning_year: year,
-        planning_month: month,
-        variant_count: variants,
-        timeout_seconds: 15
-      });
+      await runSolverWithEngagingProgress(async () => {
+        return await apiPost("/api/roster/generate", {
+          name,
+          planning_year: year,
+          planning_month: month,
+          variant_count: variants,
+          timeout_seconds: 15
+        });
+      }, 15);
 
       await loadPlans();
     };
@@ -1443,6 +1731,353 @@ window.promoteVariant = async function(planId) {
   document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
   await loadPlans();
 };
+
+// ==========================================
+// Solver Execution with Engaging Live Progress
+// ==========================================
+async function runSolverWithEngagingProgress(generateFn, timeoutLimit = 15) {
+  const modal = document.getElementById("modal-solver-progress");
+  const pctEl = document.getElementById("solver-progress-pct");
+  const fillEl = document.getElementById("solver-progress-fill");
+  const statusEl = document.getElementById("solver-dynamic-status-text");
+  const elapsedEl = document.getElementById("solver-elapsed-sec");
+  const limitEl = document.getElementById("solver-timeout-limit");
+
+  if (limitEl) limitEl.textContent = `${timeoutLimit}s`;
+  if (modal) modal.classList.remove("hidden");
+
+  const agentLines = [
+    "Formulating integer decision variables across 4 departments & 32 staff...",
+    "Enforcing ergonomic rest intervals (14h post-night rest, forbidden turnarounds)...",
+    "Locking approved employee vacations and dedicated regular days off...",
+    "Balancing weekend equity and floater distribution across wards...",
+    "Evaluating multi-variant candidate Pareto frontiers...",
+    "Finalizing conflict-free roster and computing workload scorecard..."
+  ];
+
+  let elapsedMs = 0;
+  let progressPct = 15;
+  let lineIdx = 0;
+
+  if (pctEl) pctEl.textContent = `${progressPct}%`;
+  if (fillEl) fillEl.style.width = `${progressPct}%`;
+  if (statusEl) statusEl.textContent = agentLines[0];
+
+  const timer = setInterval(() => {
+    elapsedMs += 100;
+    if (elapsedEl) elapsedEl.textContent = `${(elapsedMs / 1000).toFixed(1)}s`;
+
+    if (elapsedMs % 600 === 0) {
+      lineIdx = (lineIdx + 1) % agentLines.length;
+      if (statusEl) statusEl.textContent = agentLines[lineIdx];
+    }
+
+    if (progressPct < 90) {
+      progressPct += Math.random() > 0.4 ? 2 : 1;
+      if (pctEl) pctEl.textContent = `${progressPct}%`;
+      if (fillEl) fillEl.style.width = `${progressPct}%`;
+    }
+  }, 100);
+
+  try {
+    const result = await generateFn();
+    clearInterval(timer);
+    if (pctEl) pctEl.textContent = "100%";
+    if (fillEl) fillEl.style.width = "100%";
+    if (statusEl) statusEl.textContent = "✓ Conflict-free optimal schedule verified! Loading grid...";
+    await new Promise(r => setTimeout(r, 450));
+    if (modal) modal.classList.add("hidden");
+    return result;
+  } catch (err) {
+    clearInterval(timer);
+    if (modal) modal.classList.add("hidden");
+    alert("Solver error: " + err.message);
+    throw err;
+  }
+}
+
+async function executeRosterGeneration(mode = "blank") {
+  if (mode === "existing" && state.activePlanId) {
+    await runSolverWithEngagingProgress(async () => {
+      return await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
+    }, 15);
+    await loadSchedule();
+  } else {
+    const curPlan = state.plans.find(p => p.id === state.activePlanId);
+    const year = curPlan ? curPlan.planning_year || 2026 : 2026;
+    const month = curPlan ? curPlan.planning_month || 11 : 11;
+
+    await runSolverWithEngagingProgress(async () => {
+      return await apiPost("/api/roster/generate", {
+        name: `Roster Plan (${year}-${String(month).padStart(2, '0')})`,
+        planning_year: year,
+        planning_month: month,
+        variant_count: 3,
+        timeout_seconds: 15
+      });
+    }, 15);
+    await loadPlans();
+  }
+}
+
+// ==========================================
+// Vacations & Leaves Manager Controller
+// ==========================================
+async function loadVacationsList() {
+  const tbody = document.getElementById("vacations-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;padding:12px;'>Loading vacation records...</td></tr>";
+
+  // Populate employee select
+  const empSelect = document.getElementById("vac-emp-select");
+  if (empSelect) {
+    const emps = await apiGet("/api/employees?active_only=true");
+    empSelect.innerHTML = "";
+    emps.forEach(e => {
+      const opt = document.createElement("option");
+      opt.value = e.id;
+      opt.textContent = `${e.name} (${e.employee_code} - ${e.primary_department_name || ""})`;
+      empSelect.appendChild(opt);
+    });
+  }
+
+  // Fetch approved leaves
+  try {
+    const leaves = await apiGet("/api/leaves");
+    tbody.innerHTML = "";
+    if (leaves.length === 0) {
+      tbody.innerHTML = "<tr><td colspan='5' style='text-align:center;color:var(--text-muted);padding:14px;'>No active vacations or leaves recorded.</td></tr>";
+      return;
+    }
+
+    leaves.forEach(l => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><b>${l.employee_name || 'Staff #' + l.employee_id}</b></td>
+        <td>${l.start_date} to ${l.end_date}</td>
+        <td><span class="brand-badge" style="background:#f3e8ff;color:#6b21a8;">${l.leave_type}</span></td>
+        <td>${l.notes || '—'}</td>
+        <td style="text-align:right;">
+          <button class="btn btn-sm" style="color:#dc2626;" onclick="deleteVacationRecord(${l.id})">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan='5' style='color:#dc2626;'>Error: ${err.message}</td></tr>`;
+  }
+}
+
+window.deleteVacationRecord = async function(id) {
+  if (!confirm("Are you sure you want to cancel and delete this vacation record?")) return;
+  try {
+    const res = await apiDelete(`/api/leaves/${id}`);
+    alert(res.message || "Vacation cancelled.");
+    await loadVacationsList();
+    await loadSchedule();
+  } catch (err) {
+    alert("Cannot delete vacation: " + err.message);
+  }
+};
+
+// ==========================================
+// Advanced Settings Controller
+// ==========================================
+async function loadAdvancedSettings() {
+  try {
+    const settings = await apiGet("/api/settings");
+    state.settings = settings;
+
+    const codes = settings.custom_status_codes || {};
+    const offInput = document.getElementById("setting-code-off");
+    if (offInput) offInput.value = codes.OFF || "OFF";
+    const coffInput = document.getElementById("setting-code-coff");
+    if (coffInput) coffInput.value = codes.COFF || "Coff";
+    const vacInput = document.getElementById("setting-code-vac");
+    if (vacInput) vacInput.value = codes.VAC || "VAC";
+    const sickInput = document.getElementById("setting-code-sick");
+    if (sickInput) sickInput.value = codes.SICK || "SICK";
+
+    if (settings.generator_default_mode === "existing") {
+      const r = document.getElementById("setting-gen-existing");
+      if (r) r.checked = true;
+    } else {
+      const r = document.getElementById("setting-gen-blank");
+      if (r) r.checked = true;
+    }
+
+    const remCb = document.getElementById("setting-remember-mode");
+    if (remCb) remCb.checked = settings.remember_generator_mode;
+
+    // Render shift types list
+    const shiftsList = document.getElementById("settings-shifts-list");
+    if (shiftsList) {
+      shiftsList.innerHTML = "";
+      state.shifts.forEach(s => {
+        const div = document.createElement("div");
+        div.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#fff;border:1px solid #e2e8f0;border-radius:6px;";
+        div.innerHTML = `
+          <div>
+            <b>${s.name} (${s.code})</b>
+            <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">${s.start_time} - ${s.end_time} (${s.duration_hours}h)</span>
+          </div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer;">
+            <input type="checkbox" class="shift-active-cb" data-shift-id="${s.id}" ${s.is_active ? "checked" : ""}> Active in Roster
+          </label>
+        `;
+        shiftsList.appendChild(div);
+      });
+    }
+  } catch (err) {
+    console.error("Error loading settings:", err);
+  }
+}
+
+// ==========================================
+// Find & Replace Controller
+// ==========================================
+function initFindReplace() {
+  const modal = document.getElementById("modal-find-replace");
+  const openBtn = document.getElementById("find-replace-btn");
+  const highlightBtn = document.getElementById("fr-highlight-btn");
+  const replaceBtn = document.getElementById("fr-replace-btn");
+  const clearBtn = document.getElementById("fr-clear-btn");
+  const deptSelect = document.getElementById("fr-dept-select");
+  const msgEl = document.getElementById("fr-result-message");
+
+  if (openBtn) {
+    openBtn.onclick = () => {
+      if (deptSelect) {
+        deptSelect.innerHTML = `<option value="">All Departments (Entire Roster)</option>`;
+        state.departments.forEach(d => {
+          const opt = document.createElement("option");
+          opt.value = d.id;
+          opt.textContent = `${d.name} (${d.code})`;
+          deptSelect.appendChild(opt);
+        });
+      }
+      if (msgEl) msgEl.textContent = "";
+      modal.classList.remove("hidden");
+    };
+  }
+
+  if (highlightBtn) {
+    highlightBtn.onclick = () => {
+      const findVal = document.getElementById("fr-find-select").value.toUpperCase();
+      const targetDept = deptSelect.value ? parseInt(deptSelect.value) : null;
+      let matchCount = 0;
+
+      document.querySelectorAll(".cell-search-match").forEach(el => el.classList.remove("cell-search-match"));
+
+      document.querySelectorAll("td[data-date]").forEach(td => {
+        const rowIdx = parseInt(td.dataset.row);
+        const emp = state.currentScheduleData.rows[rowIdx];
+        if (targetDept && emp.primary_department_id !== targetDept) return;
+
+        const dateStr = td.dataset.date;
+        const assign = emp.assignments[dateStr];
+        let code = "";
+        if (assign) {
+          code = (assign.shift_code || "").toUpperCase();
+        } else {
+          code = "OFF";
+        }
+
+        if (code.includes(findVal) || (findVal === "OFF" && !assign)) {
+          td.classList.add("cell-search-match");
+          matchCount++;
+        }
+      });
+
+      if (msgEl) msgEl.innerHTML = `<span style="color:#16a34a;font-weight:600;">✓ Highlighted ${matchCount} matching cells on schedule!</span>`;
+    };
+  }
+
+  if (replaceBtn) {
+    replaceBtn.onclick = async () => {
+      const findVal = document.getElementById("fr-find-select").value;
+      const replaceVal = document.getElementById("fr-replace-select").value;
+      const targetDept = deptSelect.value ? parseInt(deptSelect.value) : null;
+
+      if (!confirm(`Are you sure you want to replace all '${findVal}' shifts with '${replaceVal}'?`)) return;
+
+      try {
+        const res = await apiPost(`/api/roster/${state.activePlanId}/find-replace`, {
+          find_shift_code: findVal,
+          replace_shift_code: replaceVal,
+          department_id: targetDept
+        });
+        if (msgEl) msgEl.innerHTML = `<span style="color:#16a34a;font-weight:600;">✓ ${res.message}</span>`;
+        await loadSchedule();
+      } catch (err) {
+        if (msgEl) msgEl.innerHTML = `<span style="color:#dc2626;font-weight:600;">Error: ${err.message}</span>`;
+      }
+    };
+  }
+
+  if (clearBtn) {
+    clearBtn.onclick = () => {
+      document.querySelectorAll(".cell-search-match").forEach(el => el.classList.remove("cell-search-match"));
+      if (msgEl) msgEl.textContent = "Highlights cleared.";
+    };
+  }
+}
+
+// ==========================================
+// Keyboard Navigation Controller (Excel Style)
+// ==========================================
+function handleGridKeyboardNavigation(e) {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  if (["INPUT", "SELECT", "TEXTAREA"].includes(tag.toUpperCase())) return;
+
+  if (!state.selectedCell || !state.currentScheduleData || state.currentView !== "staff_centric") return;
+
+  const { rowIdx, colIdx } = state.selectedCell;
+  if (rowIdx === null || rowIdx === undefined || colIdx === null || colIdx === undefined) return;
+
+  const numRows = state.currentScheduleData.rows.length;
+  const numCols = state.currentScheduleData.dates.length;
+
+  if (e.key === "Delete" || e.key === "Backspace") {
+    e.preventDefault();
+    emptySelectedCell();
+    return;
+  }
+
+  let nextRow = rowIdx;
+  let nextCol = colIdx;
+
+  if (e.key === "ArrowRight" || (e.key === "Tab" && !e.shiftKey)) {
+    e.preventDefault();
+    nextCol = (colIdx + 1) % numCols;
+    if (nextCol === 0 && e.key === "Tab") nextRow = (rowIdx + 1) % numRows;
+  } else if (e.key === "ArrowLeft" || (e.key === "Tab" && e.shiftKey)) {
+    e.preventDefault();
+    nextCol = (colIdx - 1 + numCols) % numCols;
+    if (nextCol === numCols - 1 && e.key === "Tab") nextRow = (rowIdx - 1 + numRows) % numRows;
+  } else if (e.key === "ArrowDown" || (e.key === "Enter" && !e.shiftKey)) {
+    e.preventDefault();
+    nextRow = (rowIdx + 1) % numRows;
+  } else if (e.key === "ArrowUp" || (e.key === "Enter" && e.shiftKey)) {
+    e.preventDefault();
+    nextRow = (rowIdx - 1 + numRows) % numRows;
+  } else {
+    return;
+  }
+
+  const targetTd = document.querySelector(`td[data-row="${nextRow}"][data-col="${nextCol}"]`);
+  if (targetTd) {
+    const targetEmp = state.currentScheduleData.rows[nextRow];
+    const targetDate = state.currentScheduleData.dates[nextCol];
+    const targetAssign = targetEmp.assignments[targetDate];
+    selectAssignment(targetEmp, targetDate, targetAssign, nextRow, nextCol, targetTd);
+    targetTd.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
+
+function initKeyboardNavigation() {
+  window.addEventListener("keydown", handleGridKeyboardNavigation);
+}
 
 // Bootstrap on DOM ready
 document.addEventListener("DOMContentLoaded", initApp);

@@ -72,6 +72,19 @@ def build_context_from_db(
             if l.start_date <= cur_date <= l.end_date:
                 approved_leaves.add((l.employee_id, t))
 
+    # 5. Dedicated Recurring Days Off from Employee Profile
+    combined_pinned_offs = set(pinned_offs or set())
+    for e in employees:
+        if e.fixed_off_days:
+            try:
+                fixed_days = [int(x.strip()) for x in e.fixed_off_days.split(",") if x.strip().isdigit()]
+                for t in range(horizon_days):
+                    cur_date = start_date + timedelta(days=t)
+                    if cur_date.weekday() in fixed_days:
+                        combined_pinned_offs.add((e.id, t))
+            except Exception:
+                pass
+
     return SchedulingContext(
         employees=employees,
         departments=departments,
@@ -83,7 +96,7 @@ def build_context_from_db(
         preferences=pref_dict,
         approved_leaves=approved_leaves,
         pinned_assignments=pinned_assignments or {},
-        pinned_offs=pinned_offs or set(),
+        pinned_offs=combined_pinned_offs,
         max_consecutive_days=max_consecutive_days,
         min_rest_days_per_week=min_rest_days_per_week,
         weights=weights
