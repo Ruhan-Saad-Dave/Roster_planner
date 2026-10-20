@@ -51,6 +51,96 @@ def list_plans(
         for p in plans
     ]
 
+@router.get("/previous-month-summary")
+def get_previous_month_summary(
+    year: int = Query(..., description="Target year"),
+    month: int = Query(..., description="Target month"),
+    db: Session = Depends(get_db)
+):
+    """Retrieve trailing assignments and statistics from the preceding calendar month."""
+    if month == 1:
+        prev_year = year - 1
+        prev_month = 12
+    else:
+        prev_year = year
+        prev_month = month - 1
+
+    prev_plan = db.query(RosterPlan).filter(
+        RosterPlan.planning_year == prev_year,
+        RosterPlan.planning_month == prev_month,
+        RosterPlan.is_active_variant == True
+    ).first()
+    if not prev_plan:
+        prev_plan = db.query(RosterPlan).filter(
+            RosterPlan.planning_year == prev_year,
+            RosterPlan.planning_month == prev_month
+        ).order_by(RosterPlan.id.desc()).first()
+
+    if not prev_plan:
+        return {
+            "has_previous_plan": False,
+            "prev_year": prev_year,
+            "prev_month": prev_month,
+            "employees": []
+        }
+
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    shifts = {s.id: s for s in db.query(ShiftType).all()}
+    prev_assigns = db.query(RosterAssignment).filter(RosterAssignment.plan_id == prev_plan.id).all()
+    prev_by_emp = {}
+    for pa in prev_assigns:
+        prev_by_emp.setdefault(pa.employee_id, []).append(pa)
+
+    prev_end = prev_plan.end_date
+    last_3_dates = [prev_end - timedelta(days=i) for i in reversed(range(3))]
+
+    emp_list = []
+    for emp in employees:
+        e_assigns = prev_by_emp.get(emp.id, [])
+        total_hours = sum(shifts[pa.shift_type_id].duration_hours for pa in e_assigns if pa.shift_type_id in shifts)
+        total_nights = sum(1 for pa in e_assigns if pa.shift_type_id in shifts and shifts[pa.shift_type_id].is_night_shift)
+
+        e_assign_dates = {pa.date: pa for pa in e_assigns}
+        trailing_days = 0
+        check_d = prev_end
+        while check_d in e_assign_dates:
+            trailing_days += 1
+            check_d -= timedelta(days=1)
+
+        last_day_assign = e_assign_dates.get(prev_end)
+        last_day_shift = shifts[last_day_assign.shift_type_id].code if last_day_assign and last_day_assign.shift_type_id in shifts else "OFF"
+
+        trailing_3_days = []
+        for td in last_3_dates:
+            td_assign = e_assign_dates.get(td)
+            sc = shifts[td_assign.shift_type_id].code if td_assign and td_assign.shift_type_id in shifts else "OFF"
+            trailing_3_days.append({"date": td.isoformat(), "shift_code": sc})
+
+        emp_list.append({
+            "employee_id": emp.id,
+            "employee_name": emp.name,
+            "employee_code": emp.employee_code,
+            "primary_department_id": emp.primary_department_id,
+            "worked_hours": round(total_hours, 1),
+            "total_shifts": len(e_assigns),
+            "night_shifts": total_nights,
+            "last_day_shift": last_day_shift,
+            "trailing_consecutive_days": trailing_days,
+            "trailing_3_days": trailing_3_days
+        })
+
+    return {
+        "has_previous_plan": True,
+        "plan_id": prev_plan.id,
+        "plan_name": prev_plan.name,
+        "prev_year": prev_year,
+        "prev_month": prev_month,
+        "start_date": prev_plan.start_date.isoformat(),
+        "end_date": prev_plan.end_date.isoformat(),
+        "trailing_dates": [d.isoformat() for d in last_3_dates],
+        "employees": emp_list
+    }
+
 @router.post("/generate")
 def trigger_generation(req: GenerateRosterRequest, db: Session = Depends(get_db)):
     # Calculate dates from year and month if provided
@@ -131,6 +221,75 @@ def get_plan_schedule(
     horizon_days = (plan.end_date - plan.start_date).days + 1
     dates = [plan.start_date + timedelta(days=t) for t in range(horizon_days)]
 
+    # Compute preceding month context if planning_year/month available
+    prev_context = None
+    prev_emp_summaries = {}
+    if plan.planning_year and plan.planning_month:
+        if plan.planning_month == 1:
+            p_year = plan.planning_year - 1
+            p_month = 12
+        else:
+            p_year = plan.planning_year
+            p_month = plan.planning_month - 1
+
+        prev_plan = db.query(RosterPlan).filter(
+            RosterPlan.planning_year == p_year,
+            RosterPlan.planning_month == p_month,
+            RosterPlan.is_active_variant == True
+        ).first()
+        if not prev_plan:
+            prev_plan = db.query(RosterPlan).filter(
+                RosterPlan.planning_year == p_year,
+                RosterPlan.planning_month == p_month
+            ).order_by(RosterPlan.id.desc()).first()
+
+        if prev_plan:
+            prev_assigns = db.query(RosterAssignment).filter(RosterAssignment.plan_id == prev_plan.id).all()
+            prev_by_emp = {}
+            for pa in prev_assigns:
+                prev_by_emp.setdefault(pa.employee_id, []).append(pa)
+
+            prev_end = prev_plan.end_date
+            last_3_dates = [prev_end - timedelta(days=i) for i in reversed(range(3))]
+            prev_context = {
+                "has_previous_plan": True,
+                "plan_id": prev_plan.id,
+                "name": prev_plan.name,
+                "planning_year": p_year,
+                "planning_month": p_month,
+                "trailing_dates": [d.isoformat() for d in last_3_dates]
+            }
+
+            for emp in employees:
+                e_assigns = prev_by_emp.get(emp.id, [])
+                total_hours = sum(shifts[pa.shift_type_id].duration_hours for pa in e_assigns if pa.shift_type_id in shifts)
+                total_nights = sum(1 for pa in e_assigns if pa.shift_type_id in shifts and shifts[pa.shift_type_id].is_night_shift)
+
+                e_dates = {pa.date: pa for pa in e_assigns}
+                trailing_days = 0
+                check_d = prev_end
+                while check_d in e_dates:
+                    trailing_days += 1
+                    check_d -= timedelta(days=1)
+
+                last_day_assign = e_dates.get(prev_end)
+                last_day_shift = shifts[last_day_assign.shift_type_id].code if last_day_assign and last_day_assign.shift_type_id in shifts else "OFF"
+
+                trailing_3_days = []
+                for td in last_3_dates:
+                    td_assign = e_dates.get(td)
+                    sc = shifts[td_assign.shift_type_id].code if td_assign and td_assign.shift_type_id in shifts else "OFF"
+                    trailing_3_days.append({"date": td.isoformat(), "shift_code": sc})
+
+                prev_emp_summaries[emp.id] = {
+                    "worked_hours": round(total_hours, 1),
+                    "total_shifts": len(e_assigns),
+                    "night_shifts": total_nights,
+                    "last_day_shift": last_day_shift,
+                    "trailing_consecutive_days": trailing_days,
+                    "trailing_3_days": trailing_3_days
+                }
+
     if view == "staff_centric":
         # Group by employee
         rows = []
@@ -153,6 +312,7 @@ def get_plan_schedule(
                         "shift_name": s.name if s else "",
                         "department_id": a.department_id,
                         "department_code": dept.code if dept else "",
+                        "department_color": dept.color_code if dept else "#3B82F6",
                         "is_floating": a.is_floating,
                         "float_rank": a.float_rank,
                         "is_pinned": a.is_pinned,
@@ -161,14 +321,19 @@ def get_plan_schedule(
                 else:
                     emp_assigns[d.isoformat()] = None
 
+            dept_obj = departments.get(emp.primary_department_id)
+            dept_color = dept_obj.color_code if dept_obj else "#3B82F6"
+
             rows.append({
                 "employee_id": emp.id,
                 "employee_code": emp.employee_code,
                 "employee_name": emp.name,
                 "primary_department_id": emp.primary_department_id,
-                "primary_department_name": departments[emp.primary_department_id].name if emp.primary_department_id in departments else "",
-                "primary_department_code": departments[emp.primary_department_id].code if emp.primary_department_id in departments else "",
-                "assignments": emp_assigns
+                "primary_department_name": dept_obj.name if dept_obj else "",
+                "primary_department_code": dept_obj.code if dept_obj else "",
+                "primary_department_color": dept_color,
+                "assignments": emp_assigns,
+                "previous_month_summary": prev_emp_summaries.get(emp.id)
             })
 
         return {
@@ -177,6 +342,8 @@ def get_plan_schedule(
                 "session_id": plan.session_id,
                 "name": plan.name,
                 "variant_name": plan.variant_name,
+                "planning_year": plan.planning_year,
+                "planning_month": plan.planning_month,
                 "start_date": plan.start_date.isoformat(),
                 "end_date": plan.end_date.isoformat(),
                 "status": plan.status,
@@ -184,6 +351,7 @@ def get_plan_schedule(
                 "total_deficits": plan.total_deficits,
                 "total_floats": plan.total_floats
             },
+            "previous_month_context": prev_context,
             "view_type": "staff_centric",
             "dates": [d.isoformat() for d in dates],
             "rows": rows
@@ -211,7 +379,11 @@ def get_plan_schedule(
                             "name": a.employee.name,
                             "is_floating": a.is_floating,
                             "float_rank": a.float_rank,
-                            "is_pinned": a.is_pinned
+                            "is_pinned": a.is_pinned,
+                            "primary_department_id": a.employee.primary_department_id,
+                            "primary_department_code": departments[a.employee.primary_department_id].code if a.employee.primary_department_id in departments else "",
+                            "primary_department_color": departments[a.employee.primary_department_id].color_code if a.employee.primary_department_id in departments else "#3B82F6",
+                            "department_color": dept.color_code
                         }
                         for a in assigned_list
                     ]
@@ -223,6 +395,7 @@ def get_plan_schedule(
                         "department_id": dept_id,
                         "department_code": dept.code,
                         "department_name": dept.name,
+                        "department_color": dept.color_code,
                         "shift_type_id": s_id,
                         "shift_code": shift.code,
                         "shift_name": shift.name,
@@ -233,6 +406,7 @@ def get_plan_schedule(
 
         return {
             "plan_id": plan.id,
+            "previous_month_context": prev_context,
             "view_type": "slot_centric",
             "slots": slots
         }

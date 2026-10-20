@@ -35,12 +35,21 @@
       <!-- Mode Toggle -->
       <button id="mode-toggle-btn" class="btn btn-sm">Simple Mode</button>
 
+      <!-- Prev Month Toggle -->
+      <button id="toggle-prev-month-btn" class="btn btn-sm" title="Show/Hide Previous Month Trailing Shifts & Hours">📅 Prev Month: OFF</button>
+
+      <!-- Org Management -->
+      <button id="manage-org-btn" class="btn btn-sm" title="Manage Departments, Staff & Colors">⚙️ Manage Org</button>
+
       <!-- Action Buttons -->
       <button id="new-plan-btn" class="btn btn-primary btn-sm">+ New Roster</button>
       <button id="export-excel-btn" class="btn btn-sm">Export Excel</button>
       <button id="export-pdf-btn" class="btn btn-sm">Export PDF</button>
       <button id="import-btn" class="btn btn-sm">Import Data</button>
       <button id="variants-btn" class="btn btn-sm">Variants</button>
+
+      <!-- Help Guide -->
+      <button id="help-guide-btn" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;font-weight:600;" title="User Guide, Tutorial & Button Reference">❓ Help Guide</button>
     </div>
   </header>
 
@@ -177,6 +186,298 @@
       </div>
       <div class="modal-footer">
         <button class="btn close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Manage Organization (Departments & Staff) -->
+  <div id="modal-manage-org" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 850px; width: 95%;">
+      <div class="modal-header">
+        <span>⚙️ Organization Management (Departments & Staff)</span>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-tabs">
+        <button id="org-tab-depts" class="org-tab-btn active">Departments (<span id="org-dept-count">0</span>)</button>
+        <button id="org-tab-emps" class="org-tab-btn">Staff Directory (<span id="org-emp-count">0</span>)</button>
+      </div>
+      <div class="modal-body" style="padding: 14px;">
+        <!-- TAB 1: Departments -->
+        <div id="org-depts-view">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <span style="font-weight: 600; font-size: 13px;">Configured Departments & Color Schemes</span>
+            <button id="show-add-dept-btn" class="btn btn-sm btn-primary">+ Add Department</button>
+          </div>
+
+          <!-- Add / Edit Department Card -->
+          <div id="dept-form-card" class="crud-form-card hidden">
+            <h4 id="dept-form-title" style="margin-bottom: 8px;">Create New Department</h4>
+            <div style="display: grid; grid-template-columns: 1fr 2fr 1fr 1fr; gap: 8px; align-items: end;">
+              <label>
+                <span class="form-label">Code:</span>
+                <input type="text" id="dept-form-code" class="text-input" placeholder="e.g. ICU" style="width: 100%;">
+              </label>
+              <label>
+                <span class="form-label">Name:</span>
+                <input type="text" id="dept-form-name" class="text-input" placeholder="e.g. Intensive Care Unit" style="width: 100%;">
+              </label>
+              <label>
+                <span class="form-label">Color:</span>
+                <div style="display: flex; align-items: center; gap: 6px;">
+                  <input type="color" id="dept-form-color" value="#3B82F6" style="width: 36px; height: 28px; padding: 0; border: 1px solid var(--border-color); border-radius: 4px; cursor: pointer;">
+                  <span id="dept-color-hex" style="font-size: 11px; font-family: monospace;">#3B82F6</span>
+                </div>
+              </label>
+              <label>
+                <span class="form-label">Regime:</span>
+                <select id="dept-form-regime" class="select-input" style="width: 100%;">
+                  <option value="24_7">24/7 Operational</option>
+                  <option value="WEEKDAYS_ONLY">Weekdays Only</option>
+                  <option value="CUSTOM">Custom</option>
+                </select>
+              </label>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+              <button id="cancel-dept-form-btn" class="btn btn-sm">Cancel</button>
+              <button id="save-dept-form-btn" class="btn btn-sm btn-primary">Save Department</button>
+            </div>
+            <input type="hidden" id="dept-form-id" value="">
+          </div>
+
+          <!-- Departments List Table -->
+          <div style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+            <table class="data-table" id="depts-table">
+              <thead>
+                <tr>
+                  <th style="width: 40px;">Color</th>
+                  <th>Code</th>
+                  <th>Department Name</th>
+                  <th>Operating Regime</th>
+                  <th>Staff Count</th>
+                  <th style="text-align: right; width: 120px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="depts-table-body">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 2: Staff Directory -->
+        <div id="org-emps-view" class="hidden">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-weight: 600; font-size: 13px;">Active Staff Directory</span>
+              <select id="emp-filter-dept-select" class="select-input" style="font-size: 11px;">
+                <option value="">All Departments</option>
+              </select>
+            </div>
+            <button id="show-add-emp-btn" class="btn btn-sm btn-primary">+ Add Employee</button>
+          </div>
+
+          <!-- Add / Edit Employee Card -->
+          <div id="emp-form-card" class="crud-form-card hidden">
+            <h4 id="emp-form-title" style="margin-bottom: 8px;">Create New Employee</h4>
+            <div style="display: grid; grid-template-columns: 1fr 2fr 2fr 1fr; gap: 8px; align-items: end;">
+              <label>
+                <span class="form-label">Employee Code:</span>
+                <input type="text" id="emp-form-code" class="text-input" placeholder="e.g. EMP033" style="width: 100%;">
+              </label>
+              <label>
+                <span class="form-label">Full Name:</span>
+                <input type="text" id="emp-form-name" class="text-input" placeholder="e.g. Dr. Jane Foster" style="width: 100%;">
+              </label>
+              <label>
+                <span class="form-label">Primary Department:</span>
+                <select id="emp-form-dept" class="select-input" style="width: 100%;"></select>
+              </label>
+              <label>
+                <span class="form-label">Max Hours/Wk:</span>
+                <input type="number" id="emp-form-hours" class="text-input" value="40.0" step="0.5" min="10" max="60" style="width: 100%;">
+              </label>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px;">
+              <button id="cancel-emp-form-btn" class="btn btn-sm">Cancel</button>
+              <button id="save-emp-form-btn" class="btn btn-sm btn-primary">Save Employee</button>
+            </div>
+            <input type="hidden" id="emp-form-id" value="">
+          </div>
+
+          <!-- Employees List Table -->
+          <div style="max-height: 380px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+            <table class="data-table" id="emps-table">
+              <thead>
+                <tr>
+                  <th>Code</th>
+                  <th>Employee Name</th>
+                  <th>Primary Department</th>
+                  <th>Max Hours</th>
+                  <th>Active</th>
+                  <th style="text-align: right; width: 120px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="emps-table-body">
+                <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Manager Help Guide & Interactive Tutorial -->
+  <div id="modal-help-guide" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 820px; width: 95%;">
+      <div class="modal-header" style="background: #1e293b; color: #fff;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <span>📘 LocalRoster Manager Reference & Feature Guide</span>
+          <span class="brand-badge" style="background: #3b82f6;">Interactive Guide</span>
+        </div>
+        <button class="btn btn-sm close-modal" style="color: #fff; background: transparent; border: none; font-size: 16px;">&times;</button>
+      </div>
+      <div class="modal-tabs">
+        <button id="help-tab-quick" class="org-tab-btn active">🚀 Quick Start (3 Steps)</button>
+        <button id="help-tab-buttons" class="org-tab-btn">🔘 Button & Feature Dictionary</button>
+        <button id="help-tab-health" class="org-tab-btn">🚦 Roster Health & 1-Click Fixes</button>
+        <button id="help-tab-ergonomics" class="org-tab-btn">⚖️ Rest & Ergonomic Rules</button>
+        <button id="help-tab-carryover" class="org-tab-btn">📅 Month Carryover</button>
+      </div>
+      <div class="modal-body" style="padding: 16px; max-height: 520px; overflow-y: auto;">
+        
+        <!-- SECTION 1: Quick Start -->
+        <div id="help-content-quick" class="help-section">
+          <h3 style="margin-bottom: 8px; color: var(--primary);">How to Build Your Monthly Roster in 3 Steps</h3>
+          <p style="color: var(--text-muted); margin-bottom: 14px;">LocalRoster uses Google's CP-SAT constraint optimization engine to generate mathematical schedules in seconds while respecting shift ergonomics and cross-department backup coverage.</p>
+          
+          <div class="guide-step-card">
+            <div class="guide-step-num">1</div>
+            <div class="guide-step-body">
+              <b>Step 1: Check Your Organization & Pre-Fill Known Requests</b>
+              <p>Click <b>⚙️ Manage Org</b> to add or edit departments and team members. Assign colors to make departments visually identifiable. If employees requested vacations or specific shifts, switch on <b>Prefill Mode</b>, click their calendar cell, set the shift or OFF day, and click <b>Pin / Lock Shift 📌</b>.</p>
+            </div>
+          </div>
+
+          <div class="guide-step-card">
+            <div class="guide-step-num">2</div>
+            <div class="guide-step-body">
+              <b>Step 2: Generate Roster with CP-SAT Engine</b>
+              <p>Click <b>+ New Roster</b>, pick your target Year and Month, and select <i>3 Variants</i>. Click <b>Start CP-SAT Solve</b>. In $\le 2$ seconds, the solver calculates the optimal schedule, balancing weekend duties, night shifts, and primary vs backup floating ranks.</p>
+            </div>
+          </div>
+
+          <div class="guide-step-card">
+            <div class="guide-step-num">3</div>
+            <div class="guide-step-body">
+              <b>Step 3: Inspect Roster Health & Export</b>
+              <p>Look at the top Traffic-Light Health Banner. If any shortage occurs, click the <b>1-Click Fix</b> button to immediately resolve it. Switch to the <b>Workload Audit Scorecard</b> to confirm total hours. When ready, click <b>Export Excel</b> or <b>Export PDF</b> to print or distribute.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 2: Button Dictionary -->
+        <div id="help-content-buttons" class="help-section hidden">
+          <h3 style="margin-bottom: 8px; color: var(--primary);">User Interface & Control Reference</h3>
+          <p style="color: var(--text-muted); margin-bottom: 14px;">Every control on your top toolbar and sidebar serves a dedicated operational purpose:</p>
+          
+          <div class="feature-grid">
+            <div class="feature-item">
+              <span class="feature-badge">Staff-Centric View</span>
+              <p>Displays all employees on the vertical rows with their daily shift badges horizontally across the calendar month. Color coded by department.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">Slot-Centric View</span>
+              <p>Flips the view to show every Department $\times$ Shift requirement, showing assigned employees and deficits per shift slot.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">Workload Audit Scorecard</span>
+              <p>Displays fairness diagnostics: total scheduled hours, night shift counts, weekend burden, and rest days per worker.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">Simple / Cockpit Mode</span>
+              <p>Toggles the advanced Real-Time Constraint Inspector panel on the right. Simple mode expands the schedule grid for clean viewing.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">📅 Prev Month Context</span>
+              <p>Toggles prior month trailing shift columns and total prior hours beside each worker to help you maintain continuous rotation safety.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">⚙️ Manage Org</span>
+              <p>Add, edit, or delete departments and employees directly. Customize department color schemes and set weekly work hour limits.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">+ New Roster</span>
+              <p>Generates a complete fresh monthly schedule from scratch using Google OR-Tools CP-SAT multi-variant solving.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">Prefill Mode (📌)</span>
+              <p>Enables locking shifts manually before generating. Use for pre-approved leaves, agreed holidays, or manager-assigned slots.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">Solve Remaining</span>
+              <p>Fills in only the empty slots around your pinned shifts without altering or disturbing any pinned assignments.</p>
+            </div>
+            <div class="feature-item">
+              <span class="feature-badge">Variants</span>
+              <p>Compare candidate rosters side-by-side (Balanced vs. Minimum Floating vs. Maximum Employee Preference) and activate the best one.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 3: Roster Health & Shortages -->
+        <div id="help-content-health" class="help-section hidden">
+          <h3 style="margin-bottom: 8px; color: var(--primary);">Traffic-Light Health Signals & 1-Click Fixes</h3>
+          <p style="color: var(--text-muted); margin-bottom: 14px;">The banner at the top continuously monitors schedule feasibility and labor health:</p>
+          
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <div style="padding: 10px; background: #dcfce7; border-left: 4px solid #16a34a; border-radius: 4px;">
+              <b style="color: #166534;">🟢 ALL CLEAR (Green)</b>
+              <p style="font-size: 12px; color: #166534; margin-top: 4px;">Every single shift across all departments has met or exceeded minimum required staffing. Zero ergonomic rest violations exist.</p>
+            </div>
+            <div style="padding: 10px; background: #fef9c3; border-left: 4px solid #ca8a04; border-radius: 4px;">
+              <b style="color: #854d0e;">🟡 ADVISORY / PARTIAL (Yellow)</b>
+              <p style="font-size: 12px; color: #854d0e; margin-top: 4px;">Minimum coverage is achieved, but optional secondary preferences or optimal float targets could be improved.</p>
+            </div>
+            <div style="padding: 10px; background: #fee2e2; border-left: 4px solid #dc2626; border-radius: 4px;">
+              <b style="color: #991b1b;">🔴 SHORTAGES DETECTED (Red)</b>
+              <p style="font-size: 12px; color: #991b1b; margin-top: 4px;">A department dips below minimum coverage due to multiple simultaneous leaves or headcount shortages. The banner provides a <b>1-Click Fix</b> button that intelligently finds eligible backup staff with valid rest hours to fill the gap.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- SECTION 4: Ergonomics & Rules -->
+        <div id="help-content-ergonomics" class="help-section hidden">
+          <h3 style="margin-bottom: 8px; color: var(--primary);">Ergonomic Labor Constraints Enforced by Solver</h3>
+          <p style="color: var(--text-muted); margin-bottom: 14px;">LocalRoster enforces strict mathematical invariants to protect employee health:</p>
+          
+          <ul style="padding-left: 20px; font-size: 12px; line-height: 1.8; color: var(--text-main);">
+            <li><b>Mandatory Rest:</b> At least 2 full rest days off per rolling 7-day window.</li>
+            <li><b>Max Consecutive Days:</b> Ceiling of at most 5 consecutive shifts before mandatory rest is triggered.</li>
+            <li><b>Forward-Only Rotation:</b> Inter-shift rest of $\ge 14$ hours. Working a <b>Night Shift</b> strictly forbids rotating directly into Morning or Evening shift on the following day.</li>
+            <li><b>Single Shift Per Day:</b> An employee cannot work overlapping shifts or be booked twice on the same calendar day.</li>
+            <li><b>Multi-Skilled Floating Hierarchy:</b> Primary department workers are scheduled first. If a shortage occurs, Rank 2 backup floaters are pulled before Rank 3 emergency floaters.</li>
+          </ul>
+        </div>
+
+        <!-- SECTION 5: Month Carryover -->
+        <div id="help-content-carryover" class="help-section hidden">
+          <h3 style="margin-bottom: 8px; color: var(--primary);">Month-to-Month Carryover & Continuous Scheduling</h3>
+          <p style="color: var(--text-muted); margin-bottom: 14px;">Schedules don't exist in isolation. When transitioning from one month to the next:</p>
+          
+          <div style="font-size: 12px; line-height: 1.7; color: var(--text-main);">
+            <p>1. Toggle the <b>📅 Prev Month</b> button on the header to display the final 3 days of the previous month right beside the employee names.</p>
+            <p>2. See total hours and night shifts worked in the previous month to ensure fair rotation across consecutive months.</p>
+            <p>3. If an employee worked a <b>Night Shift</b> on the final day of the previous month, LocalRoster alerts you if they are assigned to Morning on Day 1, ensuring no cross-month turnaround fatigue.</p>
+          </div>
+        </div>
+
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary close-modal">Got It, Let's Plan</button>
       </div>
     </div>
   </div>

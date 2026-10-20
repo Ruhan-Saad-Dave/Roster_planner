@@ -5,7 +5,7 @@ from typing import List
 from src.db.session import get_db
 from src.db.models import Department, ShiftType, DepartmentRequirement
 from src.api.schemas import (
-    DepartmentCreate, DepartmentResponse,
+    DepartmentCreate, DepartmentUpdate, DepartmentResponse,
     ShiftTypeCreate, ShiftTypeResponse,
     UpdateRequirementsRequest
 )
@@ -37,6 +37,47 @@ def create_department(dept_in: DepartmentCreate, db: Session = Depends(get_db)):
     resp = DepartmentResponse.model_validate(dept)
     resp.employee_count = 0
     return resp
+
+@router.put("/departments/{dept_id}", response_model=DepartmentResponse)
+def update_department(dept_id: int, dept_in: DepartmentUpdate, db: Session = Depends(get_db)):
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found.")
+    
+    if dept_in.code and dept_in.code != dept.code:
+        existing = db.query(Department).filter(Department.code == dept_in.code, Department.id != dept_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Department code already taken.")
+        dept.code = dept_in.code
+    
+    if dept_in.name is not None:
+        dept.name = dept_in.name
+    if dept_in.color_code is not None:
+        dept.color_code = dept_in.color_code
+    if dept_in.operating_regime is not None:
+        dept.operating_regime = dept_in.operating_regime
+    if dept_in.is_active is not None:
+        dept.is_active = dept_in.is_active
+
+    db.commit()
+    db.refresh(dept)
+    resp = DepartmentResponse.model_validate(dept)
+    resp.employee_count = len(dept.primary_employees)
+    return resp
+
+@router.delete("/departments/{dept_id}")
+def delete_department(dept_id: int, db: Session = Depends(get_db)):
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found.")
+    
+    # Check if any employees are primary in this department
+    if len(dept.primary_employees) > 0:
+        raise HTTPException(status_code=400, detail=f"Cannot delete department '{dept.name}' because {len(dept.primary_employees)} employee(s) are assigned to it as their primary department. Reassign them first.")
+    
+    db.delete(dept)
+    db.commit()
+    return {"message": f"Department '{dept.name}' deleted successfully."}
 
 @router.get("/shift-types", response_model=List[ShiftTypeResponse])
 def list_shift_types(active_only: bool = True, db: Session = Depends(get_db)):

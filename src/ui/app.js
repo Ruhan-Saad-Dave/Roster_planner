@@ -9,6 +9,7 @@ const state = {
   currentView: "staff_centric",
   currentMode: "simple",
   prefillMode: false,
+  showPrevMonth: false,
   plans: [],
   departments: [],
   shifts: [],
@@ -31,7 +32,40 @@ async function apiPost(endpoint, data) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data)
   });
-  if (!res.ok) throw new Error(await res.text());
+  if (!res.ok) {
+    const errText = await res.text();
+    let msg = errText;
+    try { msg = JSON.parse(errText).detail || errText; } catch (_) {}
+    throw new Error(msg);
+  }
+  return await res.json();
+}
+
+async function apiPut(endpoint, data) {
+  const res = await fetch(endpoint, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    let msg = errText;
+    try { msg = JSON.parse(errText).detail || errText; } catch (_) {}
+    throw new Error(msg);
+  }
+  return await res.json();
+}
+
+async function apiDelete(endpoint) {
+  const res = await fetch(endpoint, {
+    method: "DELETE"
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    let msg = errText;
+    try { msg = JSON.parse(errText).detail || errText; } catch (_) {}
+    throw new Error(msg);
+  }
   return await res.json();
 }
 
@@ -179,6 +213,18 @@ function renderStaffCentric(data) {
   empTh.textContent = "Employee";
   headerRow.appendChild(empTh);
 
+  const hasPrevTrailing = state.showPrevMonth && data.previous_month_context && data.previous_month_context.trailing_dates;
+
+  if (hasPrevTrailing) {
+    data.previous_month_context.trailing_dates.forEach(tdStr => {
+      const th = document.createElement("th");
+      th.className = "trailing-header";
+      const d = new Date(tdStr);
+      th.innerHTML = `<div>${d.getDate()}</div><div style="font-size:8px;">${d.toLocaleDateString("en-US", { weekday: "short" })} (Prev)</div>`;
+      headerRow.appendChild(th);
+    });
+  }
+
   data.dates.forEach(dStr => {
     const th = document.createElement("th");
     const d = new Date(dStr);
@@ -200,10 +246,44 @@ function renderStaffCentric(data) {
 
     const empTd = document.createElement("td");
     empTd.className = "sticky-col";
-    empTd.innerHTML = `<div><b>${r.employee_name}</b></div><div style="font-size:10px;color:var(--text-muted);">${r.primary_department_code} • ${r.employee_code}</div>`;
+    const deptColor = r.primary_department_color || "#3b82f6";
+
+    let prevMonthLabel = "";
+    if (state.showPrevMonth && r.previous_month_summary) {
+      prevMonthLabel = `<span style="color:#2563eb;font-weight:600;font-size:9px;">Prev: ${r.previous_month_summary.worked_hours}h (${r.previous_month_summary.night_shifts}N)</span>`;
+    }
+
+    empTd.innerHTML = `
+      <div class="emp-sticky-card" style="border-left-color: ${deptColor};">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
+          <b>${r.employee_name}</b>
+          <span class="dept-badge-tag" style="background:${deptColor};">${r.primary_department_code}</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);display:flex;gap:6px;margin-top:2px;align-items:center;">
+          <span>${r.employee_code}</span>
+          ${prevMonthLabel}
+        </div>
+      </div>
+    `;
     tr.appendChild(empTd);
 
-    data.dates.forEach(dStr => {
+    // Trailing columns from previous month
+    if (hasPrevTrailing) {
+      const trailingShifts = (r.previous_month_summary && r.previous_month_summary.trailing_3_days) || [];
+      data.previous_month_context.trailing_dates.forEach((tdStr, idx) => {
+        const td = document.createElement("td");
+        td.className = "trailing-col";
+        const tObj = trailingShifts[idx];
+        const sc = tObj ? tObj.shift_code : "-";
+        td.innerHTML = `<span class="trailing-badge">${sc}</span>`;
+        tr.appendChild(td);
+      });
+    }
+
+    // Check for turnaround warning from last day of previous month
+    const workedPriorNight = r.previous_month_summary && r.previous_month_summary.last_day_shift && r.previous_month_summary.last_day_shift.includes("NIGHT");
+
+    data.dates.forEach((dStr, dIdx) => {
       const td = document.createElement("td");
       const a = r.assignments[dStr];
 
@@ -214,8 +294,25 @@ function renderStaffCentric(data) {
         else if (a.shift_code.includes("EVE")) shiftClass = "shift-eve";
         else if (a.shift_code.includes("NIGHT")) shiftClass = "shift-night";
 
-        badge.className = `shift-badge ${shiftClass} ${a.is_floating ? "shift-floater" : ""}`;
-        badge.innerHTML = `${a.shift_code}${a.is_floating ? "*" : ""}${a.is_pinned ? " 📌" : ""}`;
+        let floaterClass = "";
+        let floaterStyle = "";
+        if (a.is_floating) {
+          floaterClass = "shift-floater";
+          floaterStyle = `box-shadow: 0 0 0 1.5px ${a.department_color || '#f59e0b'};`;
+        }
+
+        // Turnaround warning check on Day 1
+        let turnaroundClass = "";
+        let turnaroundTitle = "";
+        if (dIdx === 0 && workedPriorNight && (a.shift_code.includes("MORN") || a.shift_code.includes("EVE"))) {
+          turnaroundClass = "trailing-turnaround-warn";
+          turnaroundTitle = "Turnaround Warning: Worked Night shift on final day of prior month!";
+        }
+
+        badge.className = `shift-badge ${shiftClass} ${floaterClass} ${turnaroundClass}`;
+        if (floaterStyle) badge.style.cssText = floaterStyle;
+        if (turnaroundTitle) badge.title = turnaroundTitle;
+        badge.innerHTML = `${a.shift_code}${a.is_floating ? `*(${a.department_code})` : ""}${a.is_pinned ? " 📌" : ""}`;
 
         badge.onclick = () => selectAssignment(r, dStr, a);
         td.appendChild(badge);
@@ -258,15 +355,19 @@ function renderSlotCentric(data) {
     const tr = document.createElement("tr");
     const isDeficit = slot.deficit > 0;
 
-    const workerTags = slot.assigned_staff.map(w => 
-      `<span class="shift-badge ${w.is_floating ? 'shift-floater' : 'shift-morn'}" style="margin-right:4px;">
-        ${w.name} ${w.is_floating ? '(Floater*)' : ''} ${w.is_pinned ? '📌' : ''}
-       </span>`
-    ).join("");
+    const workerTags = slot.assigned_staff.map(w => {
+      const homeColor = w.primary_department_color || '#3b82f6';
+      return `<span class="shift-badge ${w.is_floating ? 'shift-floater' : 'shift-morn'}" style="margin-right:4px;">
+        <span class="dept-color-dot" style="background:${homeColor};"></span>
+        ${w.name} ${w.is_floating ? `(Floater from ${w.primary_department_code})` : ''} ${w.is_pinned ? '📌' : ''}
+       </span>`;
+    }).join("");
+
+    const deptColor = slot.department_color || '#3b82f6';
 
     tr.innerHTML = `
       <td style="text-align:left;padding-left:12px;font-weight:600;">${slot.date} (${slot.day_name})</td>
-      <td><span class="brand-badge">${slot.department_code}</span></td>
+      <td><span class="dept-badge-tag" style="background:${deptColor};">${slot.department_code}</span></td>
       <td><b>${slot.shift_code}</b></td>
       <td style="text-align:left;">${workerTags || '<span style="color:var(--text-muted);font-style:italic;">No staff assigned</span>'}</td>
       <td><b>${slot.assigned_count}</b></td>
@@ -314,9 +415,13 @@ function renderAuditScorecard(data) {
     if (isOvertime) varStyle = "color:#dc2626;font-weight:bold;";
     else if (isUndertime) varStyle = "color:#d97706;";
 
+    // Find dept color
+    const dObj = state.departments.find(d => d.name === sc.primary_department || d.code === sc.primary_department);
+    const deptColor = dObj ? dObj.color_code : "#3b82f6";
+
     tr.innerHTML = `
       <td style="text-align:left;padding-left:12px;"><b>${sc.name}</b> (${sc.employee_code})</td>
-      <td>${sc.primary_department}</td>
+      <td><span class="dept-badge-tag" style="background:${deptColor};">${sc.primary_department}</span></td>
       <td>${sc.contracted_hours_week}h</td>
       <td>${sc.target_hours_month}h</td>
       <td><b>${sc.scheduled_hours}h</b></td>
@@ -416,6 +521,131 @@ async function selectAssignment(emp, dateStr, currentAssignment) {
 }
 
 // ==========================================
+// Organization Management (CRUD)
+// ==========================================
+async function loadOrgDepartments() {
+  const depts = await apiGet("/api/departments?active_only=false");
+  document.getElementById("org-dept-count").textContent = depts.length;
+
+  const tbody = document.getElementById("depts-table-body");
+  tbody.innerHTML = "";
+
+  const empDeptSelect = document.getElementById("emp-form-dept");
+  const filterDeptSelect = document.getElementById("emp-filter-dept-select");
+  const curFilter = filterDeptSelect.value;
+
+  empDeptSelect.innerHTML = "";
+  filterDeptSelect.innerHTML = `<option value="">All Departments</option>`;
+
+  depts.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = `${d.name} (${d.code})`;
+    empDeptSelect.appendChild(opt);
+
+    const fOpt = document.createElement("option");
+    fOpt.value = d.id;
+    fOpt.textContent = `${d.name} (${d.code})`;
+    if (curFilter && parseInt(curFilter) === d.id) fOpt.selected = true;
+    filterDeptSelect.appendChild(fOpt);
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><span class="dept-color-dot" style="background:${d.color_code};width:14px;height:14px;"></span></td>
+      <td><b>${d.code}</b></td>
+      <td>${d.name}</td>
+      <td><span class="brand-badge" style="background:#e2e8f0;color:#334155;">${d.operating_regime === "24_7" ? "24/7 Operations" : "Weekdays Only"}</span></td>
+      <td><b>${d.employee_count || 0}</b></td>
+      <td style="text-align:right;">
+        <button class="btn btn-sm" onclick='editDepartment(${JSON.stringify(d)})'>Edit</button>
+        <button class="btn btn-sm" style="color:#dc2626;" onclick='deleteDepartment(${d.id}, "${d.name.replace(/"/g, '&quot;')}")'>Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.editDepartment = function(d) {
+  document.getElementById("dept-form-id").value = d.id;
+  document.getElementById("dept-form-code").value = d.code;
+  document.getElementById("dept-form-name").value = d.name;
+  document.getElementById("dept-form-color").value = d.color_code || "#3B82F6";
+  document.getElementById("dept-color-hex").textContent = (d.color_code || "#3B82F6").toUpperCase();
+  document.getElementById("dept-form-regime").value = d.operating_regime || "24_7";
+  document.getElementById("dept-form-title").textContent = `Edit Department: ${d.name}`;
+  document.getElementById("dept-form-card").classList.remove("hidden");
+};
+
+window.deleteDepartment = async function(id, name) {
+  if (!confirm(`Are you sure you want to delete department "${name}"?`)) return;
+  try {
+    const res = await apiDelete(`/api/departments/${id}`);
+    alert(res.message || "Department deleted.");
+    state.departments = await apiGet("/api/departments");
+    renderDeptFilters();
+    await loadOrgDepartments();
+    await loadSchedule();
+  } catch (err) {
+    alert("Cannot delete department: " + err.message);
+  }
+};
+
+async function loadOrgEmployees() {
+  const filterDeptId = document.getElementById("emp-filter-dept-select").value;
+  let url = "/api/employees?active_only=false";
+  if (filterDeptId) url += `&department_id=${filterDeptId}`;
+
+  const emps = await apiGet(url);
+  document.getElementById("org-emp-count").textContent = emps.length;
+
+  const tbody = document.getElementById("emps-table-body");
+  tbody.innerHTML = "";
+
+  emps.forEach(e => {
+    const dObj = state.departments.find(d => d.id === e.primary_department_id);
+    const dColor = dObj ? dObj.color_code : "#3B82F6";
+    const dCode = dObj ? dObj.code : "";
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td><b>${e.employee_code}</b></td>
+      <td>${e.name}</td>
+      <td><span class="dept-badge-tag" style="background:${dColor};">${dCode}</span> ${e.primary_department_name || ''}</td>
+      <td>${e.max_hours_week} hrs/wk</td>
+      <td><span class="brand-badge" style="background:${e.is_active ? '#dcfce7' : '#fee2e2'};color:${e.is_active ? '#166534' : '#991b1b'};">${e.is_active ? 'Active' : 'Inactive'}</span></td>
+      <td style="text-align:right;">
+        <button class="btn btn-sm" onclick='editEmployee(${JSON.stringify(e)})'>Edit</button>
+        <button class="btn btn-sm" style="color:#dc2626;" onclick='deleteEmployee(${e.id}, "${e.name.replace(/"/g, '&quot;')}")'>Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.editEmployee = function(e) {
+  document.getElementById("emp-form-id").value = e.id;
+  document.getElementById("emp-form-code").value = e.employee_code;
+  document.getElementById("emp-form-name").value = e.name;
+  document.getElementById("emp-form-dept").value = e.primary_department_id;
+  document.getElementById("emp-form-hours").value = e.max_hours_week || 40.0;
+  document.getElementById("emp-form-title").textContent = `Edit Employee: ${e.name}`;
+  document.getElementById("emp-form-card").classList.remove("hidden");
+};
+
+window.deleteEmployee = async function(id, name) {
+  if (!confirm(`Are you sure you want to delete employee "${name}"?`)) return;
+  try {
+    const res = await apiDelete(`/api/employees/${id}`);
+    alert(res.message || "Employee deleted.");
+    await loadOrgEmployees();
+    await loadOrgDepartments();
+    await loadSchedule();
+  } catch (err) {
+    alert("Cannot delete employee: " + err.message);
+  }
+};
+
+// ==========================================
 // Event Listeners & Modals
 // ==========================================
 function setupEventListeners() {
@@ -455,6 +685,156 @@ function setupEventListeners() {
   document.getElementById("export-pdf-btn").onclick = () => {
     if (!state.activePlanId) return;
     window.location.href = `/api/export/${state.activePlanId}/pdf`;
+  };
+
+  // Prev Month Toggle
+  document.getElementById("toggle-prev-month-btn").onclick = (e) => {
+    state.showPrevMonth = !state.showPrevMonth;
+    e.target.textContent = `📅 Prev Month: ${state.showPrevMonth ? "ON" : "OFF"}`;
+    e.target.className = `btn btn-sm ${state.showPrevMonth ? "btn-primary" : ""}`;
+    loadSchedule();
+  };
+
+  // Help Guide Modal
+  document.getElementById("help-guide-btn").onclick = () => {
+    document.getElementById("modal-help-guide").classList.remove("hidden");
+  };
+
+  const helpTabs = [
+    { btn: "help-tab-quick", content: "help-content-quick" },
+    { btn: "help-tab-buttons", content: "help-content-buttons" },
+    { btn: "help-tab-health", content: "help-content-health" },
+    { btn: "help-tab-ergonomics", content: "help-content-ergonomics" },
+    { btn: "help-tab-carryover", content: "help-content-carryover" }
+  ];
+
+  helpTabs.forEach(tab => {
+    const el = document.getElementById(tab.btn);
+    if (!el) return;
+    el.onclick = () => {
+      helpTabs.forEach(t => {
+        document.getElementById(t.btn).classList.remove("active");
+        document.getElementById(t.content).classList.add("hidden");
+      });
+      el.classList.add("active");
+      document.getElementById(tab.content).classList.remove("hidden");
+    };
+  });
+
+  // Organization Management Modal
+  document.getElementById("manage-org-btn").onclick = async () => {
+    document.getElementById("modal-manage-org").classList.remove("hidden");
+    await loadOrgDepartments();
+    await loadOrgEmployees();
+  };
+
+  // Org Tabs Switcher
+  document.getElementById("org-tab-depts").onclick = () => {
+    document.getElementById("org-tab-depts").classList.add("active");
+    document.getElementById("org-tab-emps").classList.remove("active");
+    document.getElementById("org-depts-view").classList.remove("hidden");
+    document.getElementById("org-emps-view").classList.add("hidden");
+  };
+
+  document.getElementById("org-tab-emps").onclick = () => {
+    document.getElementById("org-tab-emps").classList.add("active");
+    document.getElementById("org-tab-depts").classList.remove("active");
+    document.getElementById("org-emps-view").classList.remove("hidden");
+    document.getElementById("org-depts-view").classList.add("hidden");
+  };
+
+  // Color input hex live update
+  document.getElementById("dept-form-color").oninput = (e) => {
+    document.getElementById("dept-color-hex").textContent = e.target.value.toUpperCase();
+  };
+
+  // Department CRUD forms & actions
+  document.getElementById("show-add-dept-btn").onclick = () => {
+    document.getElementById("dept-form-id").value = "";
+    document.getElementById("dept-form-code").value = "";
+    document.getElementById("dept-form-name").value = "";
+    document.getElementById("dept-form-color").value = "#3B82F6";
+    document.getElementById("dept-color-hex").textContent = "#3B82F6";
+    document.getElementById("dept-form-regime").value = "24_7";
+    document.getElementById("dept-form-title").textContent = "Create New Department";
+    document.getElementById("dept-form-card").classList.remove("hidden");
+  };
+
+  document.getElementById("cancel-dept-form-btn").onclick = () => {
+    document.getElementById("dept-form-card").classList.add("hidden");
+  };
+
+  document.getElementById("save-dept-form-btn").onclick = async () => {
+    const id = document.getElementById("dept-form-id").value;
+    const code = document.getElementById("dept-form-code").value.trim();
+    const name = document.getElementById("dept-form-name").value.trim();
+    const color_code = document.getElementById("dept-form-color").value;
+    const operating_regime = document.getElementById("dept-form-regime").value;
+
+    if (!code || !name) {
+      alert("Please provide both a department code and name.");
+      return;
+    }
+
+    try {
+      if (id) {
+        await apiPut(`/api/departments/${id}`, { code, name, color_code, operating_regime });
+      } else {
+        await apiPost("/api/departments", { code, name, color_code, operating_regime });
+      }
+      document.getElementById("dept-form-card").classList.add("hidden");
+      state.departments = await apiGet("/api/departments");
+      renderDeptFilters();
+      await loadOrgDepartments();
+      await loadSchedule();
+    } catch (err) {
+      alert("Error saving department: " + err.message);
+    }
+  };
+
+  // Employee CRUD forms & actions
+  document.getElementById("show-add-emp-btn").onclick = () => {
+    document.getElementById("emp-form-id").value = "";
+    document.getElementById("emp-form-code").value = "";
+    document.getElementById("emp-form-name").value = "";
+    document.getElementById("emp-form-hours").value = "40.0";
+    document.getElementById("emp-form-title").textContent = "Create New Employee";
+    document.getElementById("emp-form-card").classList.remove("hidden");
+  };
+
+  document.getElementById("cancel-emp-form-btn").onclick = () => {
+    document.getElementById("emp-form-card").classList.add("hidden");
+  };
+
+  document.getElementById("save-emp-form-btn").onclick = async () => {
+    const id = document.getElementById("emp-form-id").value;
+    const employee_code = document.getElementById("emp-form-code").value.trim();
+    const name = document.getElementById("emp-form-name").value.trim();
+    const primary_department_id = parseInt(document.getElementById("emp-form-dept").value);
+    const max_hours_week = parseFloat(document.getElementById("emp-form-hours").value) || 40.0;
+
+    if (!employee_code || !name || !primary_department_id) {
+      alert("Please provide employee code, name, and primary department.");
+      return;
+    }
+
+    try {
+      if (id) {
+        await apiPut(`/api/employees/${id}`, { employee_code, name, primary_department_id, max_hours_week });
+      } else {
+        await apiPost("/api/employees", { employee_code, name, primary_department_id, max_hours_week });
+      }
+      document.getElementById("emp-form-card").classList.add("hidden");
+      await loadOrgEmployees();
+      await loadOrgDepartments();
+      await loadSchedule();
+    } catch (err) {
+      alert("Error saving employee: " + err.message);
+    }
+  };
+
+  document.getElementById("emp-filter-dept-select").onchange = () => {
+    loadOrgEmployees();
   };
 
   // Modals

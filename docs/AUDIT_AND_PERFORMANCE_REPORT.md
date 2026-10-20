@@ -35,26 +35,31 @@ The automated test suite was executed across all layers using `pytest`:
 ============================= test session starts =============================
 platform win32 -- Python 3.12.10, pytest-9.1.1, pluggy-1.7.0
 rootdir: C:\Users\HEllo\Roster_planner
-collected 10 items
+collected 13 items
 
-tests/api/test_api_roster.py::test_full_roster_generation_and_export_lifecycle PASSED [ 10%]
-tests/api/test_mcp_tools.py::test_mcp_tools_and_execution PASSED         [ 20%]
-tests/solver/test_floating_absorption.py::test_vacation_absorption_via_floating PASSED [ 30%]
-tests/solver/test_rest_ergonomics.py::test_ergonomic_rest_and_rotation_invariants PASSED [ 40%]
-tests/solver/test_shortage_deficit.py::test_extreme_workforce_starvation PASSED [ 50%]
-tests/unit/test_import.py::test_template_generation PASSED               [ 60%]
-tests/unit/test_import.py::test_csv_validation_duplicate_code PASSED     [ 70%]
-tests/unit/test_rules.py::test_forbidden_transition_night_to_morning PASSED [ 80%]
-tests/unit/test_rules.py::test_permitted_transition_morning_to_night PASSED [ 90%]
+tests/api/test_api_roster.py::test_full_roster_generation_and_export_lifecycle PASSED [  7%]
+tests/api/test_crud_and_carryover.py::test_department_crud_and_color_customization PASSED [ 15%]
+tests/api/test_crud_and_carryover.py::test_employee_crud_lifecycle PASSED [ 23%]
+tests/api/test_crud_and_carryover.py::test_previous_month_carryover_and_trailing_shifts PASSED [ 30%]
+tests/api/test_mcp_tools.py::test_mcp_tools_and_execution PASSED         [ 38%]
+tests/solver/test_floating_absorption.py::test_vacation_absorption_via_floating PASSED [ 46%]
+tests/solver/test_rest_ergonomics.py::test_ergonomic_rest_and_rotation_invariants PASSED [ 53%]
+tests/solver/test_shortage_deficit.py::test_extreme_workforce_starvation PASSED [ 61%]
+tests/unit/test_import.py::test_template_generation PASSED               [ 69%]
+tests/unit/test_import.py::test_csv_validation_duplicate_code PASSED     [ 76%]
+tests/unit/test_rules.py::test_forbidden_transition_night_to_morning PASSED [ 84%]
+tests/unit/test_rules.py::test_permitted_transition_morning_to_night PASSED [ 92%]
 tests/unit/test_rules.py::test_consecutive_days_violation PASSED         [100%]
 
-====================== 10 passed, 0 failures in 11.48s ======================
+====================== 13 passed, 0 failures in 10.92s ======================
 ```
 
 #### Test Suite Highlights
 1. **Infeasibility Shield Verified (`test_extreme_workforce_starvation`):** Under severe workforce depletion (1 employee vs. 28 required shifts), the solver did not crash; it generated a valid schedule with exactly 23 logged deficits and zero double-bookings.
 2. **Dynamic Vacation Absorption Verified (`test_vacation_absorption_via_floating`):** When Department A was crippled by 100% staff leave, eligible floaters from Department B were automatically assigned to cover Department A's demand, achieving 0 deficits.
 3. **Ergonomic Inviolability Verified (`test_ergonomic_rest_and_rotation_invariants`):** In 14-day continuous operations, zero forbidden rotations (Night followed by Morning) occurred, and rolling 7-day rest rules were strictly respected.
+4. **Direct Org CRUD & Color Palettes Verified (`test_department_crud_and_color_customization`):** Runtime creation, live hex color customization, and safe deletion of departments with cascade protection.
+5. **Month-to-Month Carryover Verified (`test_previous_month_carryover_and_trailing_shifts`):** Trailing 3-day shift history, trailing hours, and prior night shift warnings correctly carried across consecutive month planning horizons.
 
 ---
 
@@ -98,27 +103,41 @@ Your default web browser will automatically open to the **LocalRoster v2 Dashboa
 
 #### Step 2: What to Test Manually in the User Interface
 
-1. **Test the Traffic-Light Roster Health Banner:**
+1. **Test Department Color Schemes & Customization:**
+   - Notice the distinct color badges for each department on the sticky employee column and sidebar pills (e.g., ICU is Red, ER is Amber, Surg is Green, Outpatient is Indigo).
+   - Click **"⚙️ Manage Org"**, pick a new color for any department using the live color picker, and click **Save Department**. The whole schedule and filters will immediately update to your new color!
+2. **Test Direct In-App Management (CRUD):**
+   - In **"⚙️ Manage Org"**, click **"+ Add Department"** to define a custom department with arbitrary operating regimes (24/7 or Weekdays Only).
+   - Switch to the **Staff Directory** tab, click **"+ Add Employee"** to add a new worker, and set their contracted weekly hours.
+   - Edit or delete staff directly with zero CSV imports needed.
+3. **Test Month-to-Month Carryover & Prior Context:**
+   - Click the **"📅 Prev Month: OFF"** button in the top toolbar to switch it to **"ON"**.
+   - Notice the trailing columns for the last 3 days of the preceding month, along with prior month hours and night counts for each employee.
+   - If an employee worked Night on the last day of the prior month, Day 1 will highlight with a turnaround safety warning if scheduled early!
+4. **Test the Embedded Manager Help Guide:**
+   - Click **"❓ Help Guide"** in the top right to open the interactive tutorial and dictionary.
+   - Browse the 5 tabs: **Quick Start (3 Steps)**, **Button & Feature Dictionary**, **Roster Health & 1-Click Fixes**, **Ergonomic Rest Safeguards**, and **Month Carryover**.
+5. **Test the Traffic-Light Roster Health Banner:**
    - At the top of the screen, observe the instant status banner.
    - If shortages exist, click the **"1-Click Fix"** button to automatically reassign an off-duty floater.
-2. **Switch Between Dual Schedule Views:**
+6. **Switch Between Dual Schedule Views:**
    - Use the **View Selector** in the top navigation bar to toggle between:
      - **Staff-Centric View:** Inspect employee shift rows across the calendar days.
      - **Slot-Centric View:** Review department coverage per shift slot and assigned worker tags.
      - **Workload Audit Scorecard:** View scheduled hours, overtime variance, and days off per worker.
-3. **Test Real-Time Constraint Validation (Drag-and-Drop / Edit):**
+7. **Test Real-Time Constraint Validation (Drag-and-Drop / Edit):**
    - Click any shift cell (e.g. an employee working Morning).
    - In the right-hand **Inspector Panel**, change the shift to a Night shift or a different department.
    - Click **"Apply & Validate Move"**. The engine will evaluate rest intervals in real time, alerting you if it creates a consecutive streak or rest violation.
-4. **Test Pre-Filling & "Solve Remaining Slots":**
+8. **Test Pre-Filling & "Solve Remaining Slots":**
    - Click **"Prefill Mode: OFF"** in the left sidebar to toggle it to **"ON 📌"**.
    - Assign a shift to an employee. Notice the pin icon `📌` indicating that the slot is locked.
    - Click **"Solve Remaining"**. The solver optimizes all other blank slots while leaving your pinned shift untouched.
-5. **Test Multi-Variant Generation & Promotion:**
+9. **Test Multi-Variant Generation & Promotion:**
    - Click **"+ New Roster"** in the top bar.
    - Choose Year (`2026`), Month (`November`), and select `3 Variants`. Click **"Start CP-SAT Solve"**.
    - Once solved, click the **"Variants"** button in the header to compare the variants side-by-side and promote your preferred candidate to `Active Published`.
-6. **Test Spreadsheet Imports & Exports:**
-   - Click **"Export Excel"** to download the multi-tab `.xlsx` workbook (Staff Schedule, Slot Coverage, Workload Audit, and Deficit Diagnostics).
-   - Click **"Export PDF"** to generate the printable landscape vector schedule.
-   - Click **"Import Data"** to download template CSVs for employees or demand matrices.
+10. **Test Spreadsheet Imports & Exports:**
+    - Click **"Export Excel"** to download the multi-tab `.xlsx` workbook (Staff Schedule, Slot Coverage, Workload Audit, and Deficit Diagnostics).
+    - Click **"Export PDF"** to generate the printable landscape vector schedule.
+    - Click **"Import Data"** to download template CSVs for employees or demand matrices.

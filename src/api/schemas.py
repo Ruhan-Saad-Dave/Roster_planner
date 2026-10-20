@@ -10,6 +10,13 @@ class DepartmentCreate(BaseModel):
     color_code: Optional[str] = "#3B82F6"
     operating_regime: Optional[str] = "24_7"
 
+class DepartmentUpdate(BaseModel):
+    code: Optional[str] = None
+    name: Optional[str] = None
+    color_code: Optional[str] = None
+    operating_regime: Optional[str] = None
+    is_active: Optional[bool] = None
+
 class DepartmentResponse(BaseModel):
     id: int
     code: str
@@ -61,6 +68,14 @@ class EmployeeCreate(BaseModel):
     email: Optional[str] = None
     primary_department_id: int
     max_hours_week: Optional[float] = 40.0
+
+class EmployeeUpdate(BaseModel):
+    employee_code: Optional[str] = None
+    name: Optional[str] = None
+    email: Optional[str] = None
+    primary_department_id: Optional[int] = None
+    max_hours_week: Optional[float] = None
+    is_active: Optional[bool] = None
 
 class EmployeeResponse(BaseModel):
     id: int

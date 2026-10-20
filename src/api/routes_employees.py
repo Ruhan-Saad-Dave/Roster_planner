@@ -9,7 +9,7 @@ from src.db.models import (
     EmployeeShiftPreference, LeaveRecord
 )
 from src.api.schemas import (
-    EmployeeCreate, EmployeeResponse,
+    EmployeeCreate, EmployeeUpdate, EmployeeResponse,
     UpdateEligibilityRequest, UpdateShiftPreferencesRequest,
     LeaveRecordCreate, LeaveRecordResponse
 )
@@ -61,6 +61,60 @@ def create_employee(emp_in: EmployeeCreate, db: Session = Depends(get_db)):
     resp = EmployeeResponse.model_validate(emp)
     resp.primary_department_name = dept.name
     return resp
+
+@router.put("/employees/{emp_id}", response_model=EmployeeResponse)
+def update_employee(emp_id: int, emp_in: EmployeeUpdate, db: Session = Depends(get_db)):
+    emp = db.query(Employee).filter(Employee.id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    if emp_in.employee_code and emp_in.employee_code != emp.employee_code:
+        existing = db.query(Employee).filter(Employee.employee_code == emp_in.employee_code, Employee.id != emp_id).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Employee code already taken.")
+        emp.employee_code = emp_in.employee_code
+
+    if emp_in.primary_department_id is not None and emp_in.primary_department_id != emp.primary_department_id:
+        new_dept = db.query(Department).filter(Department.id == emp_in.primary_department_id).first()
+        if not new_dept:
+            raise HTTPException(status_code=400, detail="Target primary department does not exist.")
+        emp.primary_department_id = emp_in.primary_department_id
+
+        # Update primary eligibility
+        home_elig = db.query(EmployeeDepartmentEligibility).filter(
+            EmployeeDepartmentEligibility.employee_id == emp.id,
+            EmployeeDepartmentEligibility.preference_rank == 1
+        ).first()
+        if home_elig:
+            home_elig.department_id = new_dept.id
+        else:
+            db.add(EmployeeDepartmentEligibility(employee_id=emp.id, department_id=new_dept.id, preference_rank=1, can_float=False))
+
+    if emp_in.name is not None:
+        emp.name = emp_in.name
+    if emp_in.email is not None:
+        emp.email = emp_in.email
+    if emp_in.max_hours_week is not None:
+        emp.max_hours_week = emp_in.max_hours_week
+    if emp_in.is_active is not None:
+        emp.is_active = emp_in.is_active
+
+    db.commit()
+    db.refresh(emp)
+    resp = EmployeeResponse.model_validate(emp)
+    resp.primary_department_name = emp.primary_department.name if emp.primary_department else None
+    return resp
+
+@router.delete("/employees/{emp_id}")
+def delete_employee(emp_id: int, db: Session = Depends(get_db)):
+    emp = db.query(Employee).filter(Employee.id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+
+    emp_name = emp.name
+    db.delete(emp)
+    db.commit()
+    return {"message": f"Employee '{emp_name}' deleted successfully."}
 
 @router.get("/employees/{emp_id}/eligibility")
 def get_employee_eligibility(emp_id: int, db: Session = Depends(get_db)):
