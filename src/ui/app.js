@@ -74,16 +74,21 @@ async function apiDelete(endpoint) {
 // Application Bootstrap & Data Fetching
 // ==========================================
 async function initApp() {
+  // 1. Initialize all interactive UI widgets & event listeners immediately
+  initRibbonTabs();
+  initResizers();
+  initZoom();
+  initOnboarding();
+  setupEventListeners();
+
+  // 2. Fetch data from backend
   try {
     state.departments = await apiGet("/api/departments");
     state.shifts = await apiGet("/api/shift-types");
     await loadPlans();
-    setupEventListeners();
-    initResizers();
-    initZoom();
-    initOnboarding();
   } catch (err) {
     console.error("Initialization error:", err);
+    updateHealthBanner("red", "Backend communication error: " + err.message);
   }
 }
 
@@ -140,6 +145,17 @@ async function loadSchedule() {
   }
 
   renderDeptFilters();
+
+  // Update footer status bar
+  const curPlan = state.plans.find(p => p.id === state.activePlanId);
+  const planInfo = document.getElementById("status-plan-info");
+  if (planInfo && curPlan) {
+    planInfo.textContent = `${curPlan.name} (${curPlan.status})`;
+  }
+  const orgInfo = document.getElementById("status-org-info");
+  if (orgInfo) {
+    orgInfo.textContent = `${state.departments.length} Depts active`;
+  }
 }
 
 // ==========================================
@@ -147,8 +163,25 @@ async function loadSchedule() {
 // ==========================================
 function updateHealthBanner(type, message, deficits = []) {
   const banner = document.getElementById("health-banner");
-  banner.className = `health-banner ${type}`;
-  document.getElementById("health-message").textContent = message;
+  if (banner) {
+    banner.className = `health-banner ${type}`;
+    const msgEl = document.getElementById("health-message");
+    if (msgEl) msgEl.textContent = message;
+  }
+
+  const statusPill = document.getElementById("status-health-pill");
+  if (statusPill) {
+    if (type === "green") {
+      statusPill.textContent = "🟢 100% Staffed";
+      statusPill.style.color = "#166534";
+    } else if (type === "yellow") {
+      statusPill.textContent = "🟡 Advisory";
+      statusPill.style.color = "#854d0e";
+    } else {
+      statusPill.textContent = `🔴 Shortages (${deficits.length})`;
+      statusPill.style.color = "#991b1b";
+    }
+  }
 
   const actionsContainer = document.getElementById("health-actions");
   actionsContainer.innerHTML = "";
@@ -660,8 +693,14 @@ function setZoom(level) {
   state.zoomLevel = clamped;
   const label = document.getElementById("zoom-label");
   if (label) label.textContent = `${Math.round(clamped * 100)}%`;
+  const slider = document.getElementById("zoom-slider");
+  if (slider) slider.value = Math.round(clamped * 100);
+
   const table = document.getElementById("schedule-table");
-  if (table) table.style.zoom = clamped;
+  if (table) {
+    table.style.zoom = clamped;
+  }
+  document.documentElement.style.setProperty("--zoom-factor", clamped);
   localStorage.setItem("localroster_zoom_level", clamped.toString());
 }
 
@@ -669,16 +708,32 @@ function initZoom() {
   const savedZoom = parseFloat(localStorage.getItem("localroster_zoom_level"));
   if (!isNaN(savedZoom)) {
     setZoom(savedZoom);
+  } else {
+    setZoom(1.0);
   }
 
   const zoomInBtn = document.getElementById("zoom-in-btn");
-  if (zoomInBtn) zoomInBtn.onclick = () => setZoom(state.zoomLevel + 0.1);
+  if (zoomInBtn) zoomInBtn.onclick = (e) => {
+    e.preventDefault();
+    setZoom(state.zoomLevel + 0.1);
+  };
 
   const zoomOutBtn = document.getElementById("zoom-out-btn");
-  if (zoomOutBtn) zoomOutBtn.onclick = () => setZoom(state.zoomLevel - 0.1);
+  if (zoomOutBtn) zoomOutBtn.onclick = (e) => {
+    e.preventDefault();
+    setZoom(state.zoomLevel - 0.1);
+  };
 
   const zoomResetBtn = document.getElementById("zoom-reset-btn");
-  if (zoomResetBtn) zoomResetBtn.onclick = () => setZoom(1.0);
+  if (zoomResetBtn) zoomResetBtn.onclick = (e) => {
+    e.preventDefault();
+    setZoom(1.0);
+  };
+
+  const slider = document.getElementById("zoom-slider");
+  if (slider) {
+    slider.oninput = (e) => setZoom(parseFloat(e.target.value) / 100);
+  }
 
   // Ctrl + MouseWheel on grid container
   const gridContainer = document.getElementById("grid-container");
@@ -690,6 +745,66 @@ function initZoom() {
         setZoom(state.zoomLevel + delta);
       }
     }, { passive: false });
+  }
+}
+
+// ==========================================
+// Excel-Style Ribbon Category Tabs
+// ==========================================
+function initRibbonTabs() {
+  const tabs = document.querySelectorAll(".ribbon-tab");
+  tabs.forEach(tab => {
+    tab.onclick = () => {
+      tabs.forEach(t => t.classList.remove("active"));
+      tab.classList.add("active");
+      const targetPaneId = tab.getAttribute("data-tab");
+      document.querySelectorAll(".ribbon-pane").forEach(pane => {
+        if (pane.id === targetPaneId) {
+          pane.classList.remove("hidden");
+          pane.classList.add("active");
+        } else {
+          pane.classList.add("hidden");
+          pane.classList.remove("active");
+        }
+      });
+    };
+  });
+
+  const toggleSidebarBtn = document.getElementById("toggle-sidebar-btn");
+  if (toggleSidebarBtn) {
+    toggleSidebarBtn.onclick = () => {
+      const sb = document.getElementById("dept-sidebar");
+      if (sb) {
+        const isHidden = sb.style.display === "none";
+        sb.style.display = isHidden ? "flex" : "none";
+        toggleSidebarBtn.textContent = isHidden ? "Hide Dept Sidebar" : "Show Dept Sidebar";
+      }
+    };
+  }
+
+  const toggleInspectorBtn = document.getElementById("toggle-inspector-btn");
+  if (toggleInspectorBtn) {
+    toggleInspectorBtn.onclick = () => {
+      const ip = document.getElementById("inspector-panel");
+      if (ip) {
+        const isHidden = ip.style.display === "none";
+        ip.style.display = isHidden ? "flex" : "none";
+        toggleInspectorBtn.textContent = isHidden ? "Hide Inspector" : "Show Inspector";
+      }
+    };
+  }
+
+  const resetWidthsBtn = document.getElementById("reset-widths-btn");
+  if (resetWidthsBtn) {
+    resetWidthsBtn.onclick = () => {
+      localStorage.removeItem("localroster_sidebar_left_width");
+      localStorage.removeItem("localroster_sidebar_right_width");
+      const left = document.getElementById("dept-sidebar");
+      if (left) left.style.width = "220px";
+      const right = document.getElementById("inspector-panel");
+      if (right) right.style.width = "320px";
+      alert("Sidebar widths reset to standard layout.");
+    };
   }
 }
 
@@ -825,56 +940,93 @@ function initOnboarding() {
 // Event Listeners & Modals
 // ==========================================
 function setupEventListeners() {
-  document.getElementById("plan-select").onchange = (e) => {
-    state.activePlanId = parseInt(e.target.value);
+  const planSelect = document.getElementById("plan-select");
+  if (planSelect) {
+    planSelect.onchange = (e) => {
+      state.activePlanId = parseInt(e.target.value);
+      loadSchedule();
+    };
+  }
+
+  const viewSelect = document.getElementById("view-select");
+  const quickStaff = document.getElementById("quick-view-staff");
+  const quickSlot = document.getElementById("quick-view-slot");
+  const quickAudit = document.getElementById("quick-view-audit");
+
+  function setView(viewName) {
+    state.currentView = viewName;
+    if (viewSelect) viewSelect.value = viewName;
+    if (quickStaff) quickStaff.classList.toggle("active", viewName === "staff_centric");
+    if (quickSlot) quickSlot.classList.toggle("active", viewName === "slot_centric");
+    if (quickAudit) quickAudit.classList.toggle("active", viewName === "audit_scorecard");
     loadSchedule();
-  };
+  }
 
-  document.getElementById("view-select").onchange = (e) => {
-    state.currentView = e.target.value;
-    loadSchedule();
-  };
+  if (viewSelect) viewSelect.onchange = (e) => setView(e.target.value);
+  if (quickStaff) quickStaff.onclick = () => setView("staff_centric");
+  if (quickSlot) quickSlot.onclick = () => setView("slot_centric");
+  if (quickAudit) quickAudit.onclick = () => setView("audit_scorecard");
 
-  document.getElementById("mode-toggle-btn").onclick = (e) => {
-    state.currentMode = state.currentMode === "simple" ? "cockpit" : "simple";
-    e.target.textContent = state.currentMode === "simple" ? "Simple Mode" : "Cockpit Mode";
-    document.getElementById("inspector-panel").style.display = state.currentMode === "simple" ? "none" : "flex";
-  };
+  const modeBtn = document.getElementById("mode-toggle-btn");
+  if (modeBtn) {
+    modeBtn.onclick = (e) => {
+      state.currentMode = state.currentMode === "simple" ? "cockpit" : "simple";
+      e.target.textContent = state.currentMode === "simple" ? "Simple Mode" : "Cockpit Mode";
+      const inspector = document.getElementById("inspector-panel");
+      if (inspector) inspector.style.display = state.currentMode === "simple" ? "none" : "flex";
+    };
+  }
 
-  document.getElementById("prefill-toggle-btn").onclick = (e) => {
-    state.prefillMode = !state.prefillMode;
-    e.target.textContent = `Prefill Mode: ${state.prefillMode ? "ON 📌" : "OFF"}`;
-    e.target.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
-  };
+  const prefillBtn = document.getElementById("prefill-toggle-btn");
+  if (prefillBtn) {
+    prefillBtn.onclick = (e) => {
+      state.prefillMode = !state.prefillMode;
+      e.target.textContent = `Prefill Mode: ${state.prefillMode ? "ON 📌" : "OFF"}`;
+      e.target.className = `btn btn-sm ${state.prefillMode ? "btn-primary" : ""}`;
+    };
+  }
 
-  document.getElementById("solve-remaining-btn").onclick = async () => {
-    if (!state.activePlanId) return;
-    await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
-    await loadSchedule();
-  };
+  const solveRemBtn = document.getElementById("solve-remaining-btn");
+  if (solveRemBtn) {
+    solveRemBtn.onclick = async () => {
+      if (!state.activePlanId) return;
+      await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
+      await loadSchedule();
+    };
+  }
 
-  document.getElementById("export-excel-btn").onclick = () => {
-    if (!state.activePlanId) return;
-    window.location.href = `/api/export/${state.activePlanId}/excel?view=both`;
-  };
+  const expExcelBtn = document.getElementById("export-excel-btn");
+  if (expExcelBtn) {
+    expExcelBtn.onclick = () => {
+      if (!state.activePlanId) return;
+      window.location.href = `/api/export/${state.activePlanId}/excel?view=both`;
+    };
+  }
 
-  document.getElementById("export-pdf-btn").onclick = () => {
-    if (!state.activePlanId) return;
-    window.location.href = `/api/export/${state.activePlanId}/pdf`;
-  };
+  const expPdfBtn = document.getElementById("export-pdf-btn");
+  if (expPdfBtn) {
+    expPdfBtn.onclick = () => {
+      if (!state.activePlanId) return;
+      window.location.href = `/api/export/${state.activePlanId}/pdf`;
+    };
+  }
 
-  // Prev Month Toggle
-  document.getElementById("toggle-prev-month-btn").onclick = (e) => {
-    state.showPrevMonth = !state.showPrevMonth;
-    e.target.textContent = `📅 Prev Month: ${state.showPrevMonth ? "ON" : "OFF"}`;
-    e.target.className = `btn btn-sm ${state.showPrevMonth ? "btn-primary" : ""}`;
-    loadSchedule();
-  };
+  const togglePrevBtn = document.getElementById("toggle-prev-month-btn");
+  if (togglePrevBtn) {
+    togglePrevBtn.onclick = (e) => {
+      state.showPrevMonth = !state.showPrevMonth;
+      e.target.textContent = `📅 Prev Month: ${state.showPrevMonth ? "ON" : "OFF"}`;
+      e.target.className = `btn btn-sm ${state.showPrevMonth ? "btn-primary" : ""}`;
+      loadSchedule();
+    };
+  }
 
-  // Help Guide Modal
-  document.getElementById("help-guide-btn").onclick = () => {
-    document.getElementById("modal-help-guide").classList.remove("hidden");
-  };
+  const helpGuideBtn = document.getElementById("help-guide-btn");
+  if (helpGuideBtn) {
+    helpGuideBtn.onclick = () => {
+      document.getElementById("modal-help-guide").classList.remove("hidden");
+    };
+  }
 
   const helpTabs = [
     { btn: "help-tab-quick", content: "help-content-quick" },
@@ -898,171 +1050,220 @@ function setupEventListeners() {
   });
 
   // Organization Management Modal
-  document.getElementById("manage-org-btn").onclick = async () => {
-    document.getElementById("modal-manage-org").classList.remove("hidden");
-    await loadOrgDepartments();
-    await loadOrgEmployees();
-  };
+  const manageOrgBtn = document.getElementById("manage-org-btn");
+  if (manageOrgBtn) {
+    manageOrgBtn.onclick = async () => {
+      document.getElementById("modal-manage-org").classList.remove("hidden");
+      await loadOrgDepartments();
+      await loadOrgEmployees();
+    };
+  }
 
   // Org Tabs Switcher
-  document.getElementById("org-tab-depts").onclick = () => {
-    document.getElementById("org-tab-depts").classList.add("active");
-    document.getElementById("org-tab-emps").classList.remove("active");
-    document.getElementById("org-depts-view").classList.remove("hidden");
-    document.getElementById("org-emps-view").classList.add("hidden");
-  };
+  const tabDepts = document.getElementById("org-tab-depts");
+  const tabEmps = document.getElementById("org-tab-emps");
+  if (tabDepts) {
+    tabDepts.onclick = () => {
+      tabDepts.classList.add("active");
+      if (tabEmps) tabEmps.classList.remove("active");
+      const dView = document.getElementById("org-depts-view");
+      const eView = document.getElementById("org-emps-view");
+      if (dView) dView.classList.remove("hidden");
+      if (eView) eView.classList.add("hidden");
+    };
+  }
 
-  document.getElementById("org-tab-emps").onclick = () => {
-    document.getElementById("org-tab-emps").classList.add("active");
-    document.getElementById("org-tab-depts").classList.remove("active");
-    document.getElementById("org-emps-view").classList.remove("hidden");
-    document.getElementById("org-depts-view").classList.add("hidden");
-  };
+  if (tabEmps) {
+    tabEmps.onclick = () => {
+      tabEmps.classList.add("active");
+      if (tabDepts) tabDepts.classList.remove("active");
+      const dView = document.getElementById("org-depts-view");
+      const eView = document.getElementById("org-emps-view");
+      if (eView) eView.classList.remove("hidden");
+      if (dView) dView.classList.add("hidden");
+    };
+  }
 
   // Color input hex live update
-  document.getElementById("dept-form-color").oninput = (e) => {
-    document.getElementById("dept-color-hex").textContent = e.target.value.toUpperCase();
-  };
+  const deptColorIn = document.getElementById("dept-form-color");
+  if (deptColorIn) {
+    deptColorIn.oninput = (e) => {
+      const hex = document.getElementById("dept-color-hex");
+      if (hex) hex.textContent = e.target.value.toUpperCase();
+    };
+  }
 
   // Department CRUD forms & actions
-  document.getElementById("show-add-dept-btn").onclick = () => {
-    document.getElementById("dept-form-id").value = "";
-    document.getElementById("dept-form-code").value = "";
-    document.getElementById("dept-form-name").value = "";
-    document.getElementById("dept-form-color").value = "#3B82F6";
-    document.getElementById("dept-color-hex").textContent = "#3B82F6";
-    document.getElementById("dept-form-regime").value = "24_7";
-    document.getElementById("dept-form-title").textContent = "Create New Department";
-    document.getElementById("dept-form-card").classList.remove("hidden");
-  };
+  const showAddDeptBtn = document.getElementById("show-add-dept-btn");
+  if (showAddDeptBtn) {
+    showAddDeptBtn.onclick = () => {
+      document.getElementById("dept-form-id").value = "";
+      document.getElementById("dept-form-code").value = "";
+      document.getElementById("dept-form-name").value = "";
+      document.getElementById("dept-form-color").value = "#3B82F6";
+      const hex = document.getElementById("dept-color-hex");
+      if (hex) hex.textContent = "#3B82F6";
+      document.getElementById("dept-form-regime").value = "24_7";
+      document.getElementById("dept-form-title").textContent = "Create New Department";
+      document.getElementById("dept-form-card").classList.remove("hidden");
+    };
+  }
 
-  document.getElementById("cancel-dept-form-btn").onclick = () => {
-    document.getElementById("dept-form-card").classList.add("hidden");
-  };
-
-  document.getElementById("save-dept-form-btn").onclick = async () => {
-    const id = document.getElementById("dept-form-id").value;
-    const code = document.getElementById("dept-form-code").value.trim();
-    const name = document.getElementById("dept-form-name").value.trim();
-    const color_code = document.getElementById("dept-form-color").value;
-    const operating_regime = document.getElementById("dept-form-regime").value;
-
-    if (!code || !name) {
-      alert("Please provide both a department code and name.");
-      return;
-    }
-
-    try {
-      if (id) {
-        await apiPut(`/api/departments/${id}`, { code, name, color_code, operating_regime });
-      } else {
-        await apiPost("/api/departments", { code, name, color_code, operating_regime });
-      }
+  const cancelDeptBtn = document.getElementById("cancel-dept-form-btn");
+  if (cancelDeptBtn) {
+    cancelDeptBtn.onclick = () => {
       document.getElementById("dept-form-card").classList.add("hidden");
-      state.departments = await apiGet("/api/departments");
-      renderDeptFilters();
-      await loadOrgDepartments();
-      await loadSchedule();
-    } catch (err) {
-      alert("Error saving department: " + err.message);
-    }
-  };
+    };
+  }
+
+  const saveDeptBtn = document.getElementById("save-dept-form-btn");
+  if (saveDeptBtn) {
+    saveDeptBtn.onclick = async () => {
+      const id = document.getElementById("dept-form-id").value;
+      const code = document.getElementById("dept-form-code").value.trim();
+      const name = document.getElementById("dept-form-name").value.trim();
+      const color_code = document.getElementById("dept-form-color").value;
+      const operating_regime = document.getElementById("dept-form-regime").value;
+
+      if (!code || !name) {
+        alert("Please provide both a department code and name.");
+        return;
+      }
+
+      try {
+        if (id) {
+          await apiPut(`/api/departments/${id}`, { code, name, color_code, operating_regime });
+        } else {
+          await apiPost("/api/departments", { code, name, color_code, operating_regime });
+        }
+        document.getElementById("dept-form-card").classList.add("hidden");
+        state.departments = await apiGet("/api/departments");
+        renderDeptFilters();
+        await loadOrgDepartments();
+        await loadSchedule();
+      } catch (err) {
+        alert("Error saving department: " + err.message);
+      }
+    };
+  }
 
   // Employee CRUD forms & actions
-  document.getElementById("show-add-emp-btn").onclick = () => {
-    document.getElementById("emp-form-id").value = "";
-    document.getElementById("emp-form-code").value = "";
-    document.getElementById("emp-form-name").value = "";
-    document.getElementById("emp-form-hours").value = "40.0";
-    document.getElementById("emp-form-title").textContent = "Create New Employee";
-    document.getElementById("emp-form-card").classList.remove("hidden");
-  };
+  const showAddEmpBtn = document.getElementById("show-add-emp-btn");
+  if (showAddEmpBtn) {
+    showAddEmpBtn.onclick = () => {
+      document.getElementById("emp-form-id").value = "";
+      document.getElementById("emp-form-code").value = "";
+      document.getElementById("emp-form-name").value = "";
+      document.getElementById("emp-form-hours").value = "40.0";
+      document.getElementById("emp-form-title").textContent = "Create New Employee";
+      document.getElementById("emp-form-card").classList.remove("hidden");
+    };
+  }
 
-  document.getElementById("cancel-emp-form-btn").onclick = () => {
-    document.getElementById("emp-form-card").classList.add("hidden");
-  };
-
-  document.getElementById("save-emp-form-btn").onclick = async () => {
-    const id = document.getElementById("emp-form-id").value;
-    const employee_code = document.getElementById("emp-form-code").value.trim();
-    const name = document.getElementById("emp-form-name").value.trim();
-    const primary_department_id = parseInt(document.getElementById("emp-form-dept").value);
-    const max_hours_week = parseFloat(document.getElementById("emp-form-hours").value) || 40.0;
-
-    if (!employee_code || !name || !primary_department_id) {
-      alert("Please provide employee code, name, and primary department.");
-      return;
-    }
-
-    try {
-      if (id) {
-        await apiPut(`/api/employees/${id}`, { employee_code, name, primary_department_id, max_hours_week });
-      } else {
-        await apiPost("/api/employees", { employee_code, name, primary_department_id, max_hours_week });
-      }
+  const cancelEmpBtn = document.getElementById("cancel-emp-form-btn");
+  if (cancelEmpBtn) {
+    cancelEmpBtn.onclick = () => {
       document.getElementById("emp-form-card").classList.add("hidden");
-      await loadOrgEmployees();
-      await loadOrgDepartments();
-      await loadSchedule();
-    } catch (err) {
-      alert("Error saving employee: " + err.message);
-    }
-  };
+    };
+  }
 
-  document.getElementById("emp-filter-dept-select").onchange = () => {
-    loadOrgEmployees();
-  };
+  const saveEmpBtn = document.getElementById("save-emp-form-btn");
+  if (saveEmpBtn) {
+    saveEmpBtn.onclick = async () => {
+      const id = document.getElementById("emp-form-id").value;
+      const employee_code = document.getElementById("emp-form-code").value.trim();
+      const name = document.getElementById("emp-form-name").value.trim();
+      const primary_department_id = parseInt(document.getElementById("emp-form-dept").value);
+      const max_hours_week = parseFloat(document.getElementById("emp-form-hours").value) || 40.0;
+
+      if (!employee_code || !name || !primary_department_id) {
+        alert("Please provide employee code, name, and primary department.");
+        return;
+      }
+
+      try {
+        if (id) {
+          await apiPut(`/api/employees/${id}`, { employee_code, name, primary_department_id, max_hours_week });
+        } else {
+          await apiPost("/api/employees", { employee_code, name, primary_department_id, max_hours_week });
+        }
+        document.getElementById("emp-form-card").classList.add("hidden");
+        await loadOrgEmployees();
+        await loadOrgDepartments();
+        await loadSchedule();
+      } catch (err) {
+        alert("Error saving employee: " + err.message);
+      }
+    };
+  }
+
+  const empFilterDept = document.getElementById("emp-filter-dept-select");
+  if (empFilterDept) {
+    empFilterDept.onchange = () => {
+      loadOrgEmployees();
+    };
+  }
 
   // Modals
-  document.getElementById("new-plan-btn").onclick = () => {
-    document.getElementById("modal-new-plan").classList.remove("hidden");
-  };
+  const newPlanBtn = document.getElementById("new-plan-btn");
+  if (newPlanBtn) {
+    newPlanBtn.onclick = () => {
+      document.getElementById("modal-new-plan").classList.remove("hidden");
+    };
+  }
 
-  document.getElementById("import-btn").onclick = () => {
-    document.getElementById("modal-import").classList.remove("hidden");
-  };
+  const importBtn = document.getElementById("import-btn");
+  if (importBtn) {
+    importBtn.onclick = () => {
+      document.getElementById("modal-import").classList.remove("hidden");
+    };
+  }
 
-  document.getElementById("variants-btn").onclick = async () => {
-    document.getElementById("modal-variants").classList.remove("hidden");
-    const container = document.getElementById("variants-comparison-content");
-    container.innerHTML = `<p>Loading sibling variants...</p>`;
+  const variantsBtn = document.getElementById("variants-btn");
+  if (variantsBtn) {
+    variantsBtn.onclick = async () => {
+      document.getElementById("modal-variants").classList.remove("hidden");
+      const container = document.getElementById("variants-comparison-content");
+      if (!container) return;
+      container.innerHTML = `<p>Loading sibling variants...</p>`;
 
-    const curPlan = state.plans.find(p => p.id === state.activePlanId);
-    if (!curPlan) return;
+      const curPlan = state.plans.find(p => p.id === state.activePlanId);
+      if (!curPlan) return;
 
-    const siblings = state.plans.filter(p => p.session_id === curPlan.session_id);
-    let html = `<table class="schedule-table" style="width:100%;margin-top:10px;">
-      <thead>
-        <tr>
-          <th>Variant Name</th>
-          <th>Strategy</th>
-          <th>Deficits</th>
-          <th>Floats</th>
-          <th>Runtime</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>`;
+      const siblings = state.plans.filter(p => p.session_id === curPlan.session_id);
+      let html = `<table class="schedule-table" style="width:100%;margin-top:10px;">
+        <thead>
+          <tr>
+            <th>Variant Name</th>
+            <th>Strategy</th>
+            <th>Deficits</th>
+            <th>Floats</th>
+            <th>Runtime</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>`;
 
-    siblings.forEach(s => {
-      html += `
-        <tr>
-          <td><b>${s.variant_name}</b></td>
-          <td>${s.variant_strategy}</td>
-          <td>${s.total_deficits > 0 ? `<span style="color:#ef4444;font-weight:bold;">${s.total_deficits}</span>` : '0'}</td>
-          <td>${s.total_floats}</td>
-          <td>${s.solve_time_seconds}s</td>
-          <td>
-            ${s.is_active_variant 
-              ? `<span class="brand-badge" style="background:#10b981;">Active Published</span>`
-              : `<button class="btn btn-sm btn-primary" onclick="promoteVariant(${s.id})">Promote to Active</button>`
-            }
-          </td>
-        </tr>`;
-    });
-    html += `</tbody></table>`;
-    container.innerHTML = html;
-  };
+      siblings.forEach(s => {
+        html += `
+          <tr>
+            <td><b>${s.variant_name}</b></td>
+            <td>${s.variant_strategy}</td>
+            <td>${s.total_deficits > 0 ? `<span style="color:#ef4444;font-weight:bold;">${s.total_deficits}</span>` : '0'}</td>
+            <td>${s.total_floats}</td>
+            <td>${s.solve_time_seconds}s</td>
+            <td>
+              ${s.is_active_variant 
+                ? `<span class="brand-badge" style="background:#10b981;">Active Published</span>`
+                : `<button class="btn btn-sm btn-primary" onclick="promoteVariant(${s.id})">Promote to Active</button>`
+              }
+            </td>
+          </tr>`;
+      });
+      html += `</tbody></table>`;
+      container.innerHTML = html;
+    };
+  }
 
   document.querySelectorAll(".close-modal").forEach(btn => {
     btn.onclick = () => {
@@ -1071,31 +1272,37 @@ function setupEventListeners() {
   });
 
   // Confirm New Plan
-  document.getElementById("confirm-generate-btn").onclick = async () => {
-    const name = document.getElementById("new-plan-name").value;
-    const year = parseInt(document.getElementById("new-plan-year").value);
-    const month = parseInt(document.getElementById("new-plan-month").value);
-    const variants = parseInt(document.getElementById("new-plan-variants").value);
+  const confirmGenBtn = document.getElementById("confirm-generate-btn");
+  if (confirmGenBtn) {
+    confirmGenBtn.onclick = async () => {
+      const name = document.getElementById("new-plan-name").value;
+      const year = parseInt(document.getElementById("new-plan-year").value);
+      const month = parseInt(document.getElementById("new-plan-month").value);
+      const variants = parseInt(document.getElementById("new-plan-variants").value);
 
-    document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
-    updateHealthBanner("yellow", "🟡 CP-SAT Solver is running integer optimization...");
+      document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
+      updateHealthBanner("yellow", "🟡 CP-SAT Solver is running integer optimization...");
 
-    const res = await apiPost("/api/roster/generate", {
-      name,
-      planning_year: year,
-      planning_month: month,
-      variant_count: variants,
-      timeout_seconds: 15
-    });
+      await apiPost("/api/roster/generate", {
+        name,
+        planning_year: year,
+        planning_month: month,
+        variant_count: variants,
+        timeout_seconds: 15
+      });
 
-    await loadPlans();
-  };
+      await loadPlans();
+    };
+  }
 
   // Import Template download
-  document.getElementById("download-template-btn").onclick = () => {
-    const type = document.getElementById("import-type-select").value;
-    window.location.href = `/api/import/template/${type}`;
-  };
+  const dlTplBtn = document.getElementById("download-template-btn");
+  if (dlTplBtn) {
+    dlTplBtn.onclick = () => {
+      const type = document.getElementById("import-type-select").value;
+      window.location.href = `/api/import/template/${type}`;
+    };
+  }
 }
 
 window.promoteVariant = async function(planId) {

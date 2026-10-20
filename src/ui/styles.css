@@ -45,14 +45,13 @@ body {
 }
 
 /* Header & Nav */
-header {
+.app-header {
   background: #0f172a;
   color: #ffffff;
-  padding: 8px 16px;
+  padding: 6px 16px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
   z-index: 20;
 }
 
@@ -61,7 +60,7 @@ header {
   align-items: center;
   gap: 10px;
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
   letter-spacing: -0.02em;
 }
 
@@ -70,13 +69,250 @@ header {
   color: #fff;
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 11px;
+  font-size: 10px;
 }
 
-.header-controls {
+.plan-header-selector {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.plan-header-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.05em;
+}
+
+.select-plan-styled {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+  border: 1px solid #334155 !important;
+  font-weight: 600;
+  min-width: 250px;
+}
+
+.header-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-header {
+  background: #1e293b;
+  color: #f8fafc;
+  border-color: #334155;
+}
+
+.btn-header:hover {
+  background: #334155;
+}
+
+/* Excel-Style Ribbon Category Tabs */
+.ribbon-tabs-nav {
+  display: flex;
+  background: #1e293b;
+  padding: 0 16px;
+  gap: 4px;
+  border-bottom: 1px solid #334155;
+}
+
+.ribbon-tab {
+  background: transparent;
+  color: #94a3b8;
+  border: none;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.ribbon-tab:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.ribbon-tab.active {
+  background: #ffffff;
+  color: #0f172a;
+}
+
+/* Ribbon Content Bar */
+.ribbon-bar {
+  background: #ffffff;
+  border-bottom: 1px solid var(--border-color);
+  padding: 6px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  z-index: 15;
+}
+
+.ribbon-pane {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.ribbon-pane.hidden {
+  display: none !important;
+}
+
+.ribbon-group {
+  display: flex;
+  flex-direction: column;
+  padding-right: 14px;
+  border-right: 1px solid var(--border-color);
+  gap: 4px;
+}
+
+.ribbon-group:last-child {
+  border-right: none;
+}
+
+.ribbon-group-title {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ribbon-group-tools {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Button Variants */
+.btn-accent {
+  background: #f59e0b;
+  color: #ffffff;
+  border-color: #d97706;
+}
+
+.btn-accent:hover {
+  background: #d97706;
+}
+
+.btn-success {
+  background: #10b981;
+  color: #ffffff;
+  border-color: #059669;
+}
+
+.btn-success:hover {
+  background: #059669;
+}
+
+/* Bottom Status Bar (Excel-Style Footer) */
+.status-bar {
+  background: #f1f5f9;
+  border-top: 1px solid var(--border-color);
+  height: 28px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #475569;
+  user-select: none;
+  z-index: 20;
+  flex-shrink: 0;
+}
+
+.status-left, .status-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.status-pill {
+  font-weight: 600;
+  color: #166534;
+}
+
+.status-divider {
+  color: #cbd5e1;
+}
+
+.status-views {
+  display: flex;
+  gap: 2px;
+}
+
+.status-icon-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #475569;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.1s ease;
+}
+
+.status-icon-btn:hover {
+  background: #e2e8f0;
+}
+
+.status-icon-btn.active {
+  background: #ffffff;
+  border-color: #cbd5e1;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.status-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-zoom-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: #475569;
+  cursor: pointer;
+  border-radius: 3px;
+}
+
+.status-zoom-btn:hover {
+  background: #e2e8f0;
+}
+
+#zoom-slider {
+  width: 90px;
+  height: 4px;
+  cursor: pointer;
+  accent-color: var(--primary);
+}
+
+.status-zoom-label {
+  background: transparent;
+  border: none;
+  font-size: 11px;
+  font-weight: 600;
+  color: #1e293b;
+  cursor: pointer;
+  min-width: 38px;
+  text-align: right;
+  padding: 0 4px;
+}
+
+.status-zoom-label:hover {
+  color: var(--primary);
+  text-decoration: underline;
 }
 
 /* Buttons */
@@ -221,9 +457,10 @@ header {
 .schedule-table th, .schedule-table td {
   border-right: 1px solid var(--border-color);
   border-bottom: 1px solid var(--border-color);
-  padding: 4px;
+  padding: calc(4px * var(--zoom-factor, 1));
   text-align: center;
   white-space: nowrap;
+  font-size: calc(12px * var(--zoom-factor, 1));
 }
 
 /* Sticky Headers & Columns */
@@ -234,7 +471,7 @@ header {
   z-index: 10;
   font-weight: 600;
   color: var(--text-muted);
-  padding: 8px 6px;
+  padding: calc(6px * var(--zoom-factor, 1)) calc(6px * var(--zoom-factor, 1));
 }
 
 .sticky-col {
@@ -243,9 +480,9 @@ header {
   background: #ffffff;
   z-index: 5;
   text-align: left !important;
-  padding: 6px 12px !important;
+  padding: calc(6px * var(--zoom-factor, 1)) calc(12px * var(--zoom-factor, 1)) !important;
   font-weight: 600;
-  min-width: 170px;
+  min-width: calc(170px * var(--zoom-factor, 1));
   border-right: 2px solid #cbd5e1 !important;
 }
 
@@ -259,9 +496,15 @@ header {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 4px 6px;
+  padding: calc(3px * var(--zoom-factor, 1)) calc(6px * var(--zoom-factor, 1));
   border-radius: 4px;
-  font-size: 11px;
+  font-size: calc(11px * var(--zoom-factor, 1));
+  min-width: calc(44px * var(--zoom-factor, 1));
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s ease;
+  position: relative;
+}
   font-weight: 600;
   min-width: 48px;
   cursor: pointer;

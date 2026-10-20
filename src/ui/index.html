@@ -9,7 +9,7 @@
 <body>
 
   <!-- Top Persistent Header -->
-  <header>
+  <header class="app-header">
     <div class="brand">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -21,48 +21,93 @@
       <span class="brand-badge">v2.0 Offline</span>
     </div>
 
-    <div class="header-controls">
-      <!-- Plan Selector -->
-      <select id="plan-select" class="select-input"></select>
+    <!-- Active Roster Plan Selector in Top Header -->
+    <div class="plan-header-selector">
+      <span class="plan-header-label">ACTIVE ROSTER:</span>
+      <select id="plan-select" class="select-input select-plan-styled"></select>
+    </div>
 
-      <!-- View Selector -->
-      <select id="view-select" class="select-input">
-        <option value="staff_centric">Staff-Centric View</option>
-        <option value="slot_centric">Slot-Centric View</option>
-        <option value="audit_scorecard">Workload Audit Scorecard</option>
-      </select>
-
-      <!-- Mode Toggle -->
-      <button id="mode-toggle-btn" class="btn btn-sm">Simple Mode</button>
-
-      <!-- Prev Month Toggle -->
-      <button id="toggle-prev-month-btn" class="btn btn-sm" title="Show/Hide Previous Month Trailing Shifts & Hours">📅 Prev Month: OFF</button>
-
-      <!-- Zoom Controls -->
-      <div class="zoom-pill" title="Zoom Schedule Table (or Ctrl + Scroll wheel)">
-        <button id="zoom-out-btn" class="zoom-btn" title="Zoom Out (Ctrl -)">−</button>
-        <span id="zoom-label">100%</span>
-        <button id="zoom-in-btn" class="zoom-btn" title="Zoom In (Ctrl +)">+</button>
-        <button id="zoom-reset-btn" class="zoom-btn zoom-btn-text" title="Reset Zoom to 100%">100%</button>
-      </div>
-
-      <!-- Quick Setup / Onboarding -->
-      <button id="welcome-setup-btn" class="btn btn-sm" title="Setup Options / Onboarding Wizard">🚀 Setup</button>
-
-      <!-- Org Management -->
-      <button id="manage-org-btn" class="btn btn-sm" title="Manage Departments, Staff & Colors">⚙️ Manage Org</button>
-
-      <!-- Action Buttons -->
-      <button id="new-plan-btn" class="btn btn-primary btn-sm">+ New Roster</button>
-      <button id="export-excel-btn" class="btn btn-sm">Export Excel</button>
-      <button id="export-pdf-btn" class="btn btn-sm">Export PDF</button>
-      <button id="import-btn" class="btn btn-sm">Import Data</button>
-      <button id="variants-btn" class="btn btn-sm">Variants</button>
-
-      <!-- Help Guide -->
-      <button id="help-guide-btn" class="btn btn-sm" style="background:#e0e7ff;color:#3730a3;font-weight:600;" title="User Guide, Tutorial & Button Reference">❓ Help Guide</button>
+    <!-- Right Header Actions -->
+    <div class="header-right-actions">
+      <button id="welcome-setup-btn" class="btn btn-sm btn-header" title="Initial Setup & Onboarding Wizard">🚀 Setup Wizard</button>
+      <button id="help-guide-btn" class="btn btn-sm btn-header" style="background:#e0e7ff;color:#3730a3;font-weight:600;" title="User Guide & Tutorials">❓ Help Guide</button>
     </div>
   </header>
+
+  <!-- Excel-Style Ribbon Category Tabs -->
+  <nav class="ribbon-tabs-nav" id="ribbon-tabs-nav">
+    <button class="ribbon-tab active" data-tab="pane-schedule">📋 Schedule & Solve</button>
+    <button class="ribbon-tab" data-tab="pane-org">🏢 Organization & Staff</button>
+    <button class="ribbon-tab" data-tab="pane-export">📊 Reports & Exports</button>
+    <button class="ribbon-tab" data-tab="pane-view">👁️ View Options</button>
+  </nav>
+
+  <!-- Ribbon Tab Content Panes -->
+  <div class="ribbon-bar">
+    <!-- TAB 1: Schedule & Solve -->
+    <div class="ribbon-pane active" id="pane-schedule">
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Solver Execution</span>
+        <div class="ribbon-group-tools">
+          <button id="new-plan-btn" class="btn btn-primary btn-sm">+ New Roster</button>
+          <button id="solve-remaining-btn" class="btn btn-sm btn-accent" title="Solve blank slots while keeping pinned slots locked">Solve Remaining</button>
+          <button id="prefill-toggle-btn" class="btn btn-sm">Prefill Mode: OFF</button>
+          <button id="variants-btn" class="btn btn-sm">Compare Variants</button>
+        </div>
+      </div>
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Schedule Filters & Periods</span>
+        <div class="ribbon-group-tools">
+          <select id="view-select" class="select-input">
+            <option value="staff_centric">Staff-Centric View</option>
+            <option value="slot_centric">Slot-Centric View</option>
+            <option value="audit_scorecard">Workload Audit Scorecard</option>
+          </select>
+          <button id="toggle-prev-month-btn" class="btn btn-sm" title="Show/Hide Previous Month Trailing Shifts">📅 Prev Month: OFF</button>
+          <button id="mode-toggle-btn" class="btn btn-sm">Simple Mode</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 2: Organization & Staff -->
+    <div class="ribbon-pane hidden" id="pane-org">
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Workforce Directory</span>
+        <div class="ribbon-group-tools">
+          <button id="manage-org-btn" class="btn btn-primary btn-sm">⚙️ Manage Org (Depts, Staff & Colors)</button>
+        </div>
+      </div>
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Bulk Spreadsheets</span>
+        <div class="ribbon-group-tools">
+          <button id="import-btn" class="btn btn-sm">📥 Import CSV / Excel Data</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 3: Reports & Exports -->
+    <div class="ribbon-pane hidden" id="pane-export">
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Export Options</span>
+        <div class="ribbon-group-tools">
+          <button id="export-excel-btn" class="btn btn-sm btn-success">📊 Export Formatted Excel (.xlsx)</button>
+          <button id="export-pdf-btn" class="btn btn-sm">📄 Export PDF (Vector Print)</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 4: View Options -->
+    <div class="ribbon-pane hidden" id="pane-view">
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Sidebars & Layout</span>
+        <div class="ribbon-group-tools">
+          <button id="toggle-sidebar-btn" class="btn btn-sm">Toggle Dept Sidebar</button>
+          <button id="toggle-inspector-btn" class="btn btn-sm">Toggle Inspector</button>
+          <button id="reset-widths-btn" class="btn btn-sm">Reset Sidebar Widths</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Traffic-Light Health Banner -->
   <div id="health-banner" class="health-banner green">
@@ -559,6 +604,38 @@
       </div>
     </div>
   </div>
+
+  <!-- Excel-Style Bottom Status Bar -->
+  <footer class="status-bar" id="status-bar">
+    <div class="status-left">
+      <span class="status-pill" id="status-health-pill">🟢 Ready</span>
+      <span class="status-divider">|</span>
+      <span id="status-plan-info">Loading active plan...</span>
+      <span class="status-divider">|</span>
+      <span id="status-org-info">32 Staff &bull; 4 Depts</span>
+    </div>
+
+    <div class="status-right">
+      <!-- Quick View Selector Shortcuts -->
+      <div class="status-views">
+        <button id="quick-view-staff" class="status-icon-btn active" title="Staff-Centric View">👤 Staff</button>
+        <button id="quick-view-slot" class="status-icon-btn" title="Slot-Centric View">📋 Slots</button>
+        <button id="quick-view-audit" class="status-icon-btn" title="Workload Scorecard">⚖️ Audit</button>
+      </div>
+
+      <span class="status-divider">|</span>
+
+      <!-- Excel-Style Interactive Zoom Slider & Buttons -->
+      <div class="status-zoom-controls">
+        <button id="zoom-out-btn" class="status-zoom-btn" title="Zoom Out (Ctrl -)">−</button>
+        <input type="range" id="zoom-slider" min="65" max="160" step="5" value="100" title="Zoom schedule table (or Ctrl + scroll)">
+        <button id="zoom-in-btn" class="status-zoom-btn" title="Zoom In (Ctrl +)">+</button>
+        <button id="zoom-reset-btn" class="status-zoom-label" title="Click to reset zoom to 100%">
+          <span id="zoom-label">100%</span>
+        </button>
+      </div>
+    </div>
+  </footer>
 
   <script src="/static/app.js"></script>
 </body>
