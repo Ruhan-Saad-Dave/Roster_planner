@@ -123,13 +123,24 @@
   <div class="main-wrapper" id="main-wrapper">
     <!-- Left Navigation Sidebar -->
     <aside class="dept-sidebar" id="dept-sidebar">
-      <div class="sidebar-heading">Filter Departments</div>
+      <div class="sidebar-header-row">
+        <span class="sidebar-heading">Filter Departments</span>
+        <button id="sidebar-left-collapse-btn" class="sidebar-collapse-icon-btn" title="Collapse sidebar (◀)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+        </button>
+      </div>
       <div id="dept-filter-list"></div>
 
       <div class="sidebar-heading" style="margin-top: 15px;">Operational Actions</div>
       <button id="sidebar-prefill-btn" class="btn btn-sm" style="width: 100%;">Prefill Mode: OFF</button>
       <button id="sidebar-solve-btn" class="btn btn-sm btn-primary" style="width: 100%;">Solve Remaining</button>
     </aside>
+
+    <!-- Floating Expand Button for Left Sidebar (When collapsed) -->
+    <button id="sidebar-left-expand-btn" class="sidebar-floating-expand-btn left-expand hidden" title="Expand Departments Sidebar (▶)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+      <span>Departments</span>
+    </button>
 
     <!-- Left Resizer Splitter -->
     <div class="resizer resizer-left" id="resizer-left" title="Drag to resize departments sidebar"></div>
@@ -144,9 +155,20 @@
     <!-- Right Resizer Splitter -->
     <div class="resizer resizer-right" id="resizer-right" title="Drag to resize constraint inspector"></div>
 
+    <!-- Floating Expand Button for Right Inspector (When collapsed) -->
+    <button id="sidebar-right-expand-btn" class="sidebar-floating-expand-btn right-expand hidden" title="Expand Shift Inspector (◀)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg>
+      <span>Inspector</span>
+    </button>
+
     <!-- Right Conflict & Shift Inspector -->
     <aside class="inspector-panel" id="inspector-panel">
-      <div class="sidebar-heading">Real-Time Constraint Inspector</div>
+      <div class="sidebar-header-row">
+        <span class="sidebar-heading">Constraint Inspector</span>
+        <button id="sidebar-right-collapse-btn" class="sidebar-collapse-icon-btn" title="Collapse inspector (▶)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
+        </button>
+      </div>
       <div id="inspector-content">
         <p style="color: var(--text-muted); font-size: 12px;">Click any shift cell to inspect rules, rest intervals, or reassign manually.</p>
       </div>
@@ -161,6 +183,42 @@
         <button id="inspector-pin-btn" class="btn btn-sm" title="Lock the current assigned shift in place">Pin Current Shift 📌</button>
       </div>
     </aside>
+  </div>
+
+  <!-- Floating Cell Hover Info Popover -->
+  <div id="cell-hover-popover" class="cell-hover-popover hidden">
+    <div class="hover-popover-header">
+      <div class="hover-emp-name" id="hover-pop-emp">Employee Name</div>
+      <div class="hover-emp-dept" id="hover-pop-dept">Primary Department</div>
+    </div>
+    <div class="hover-popover-body">
+      <div class="hover-row">
+        <span class="hover-label">Date:</span>
+        <span class="hover-value" id="hover-pop-date">Nov 15, 2026 (Sun)</span>
+      </div>
+      <div class="hover-row">
+        <span class="hover-label">Assignment:</span>
+        <span class="hover-value" id="hover-pop-shift">Morning (MORN)</span>
+      </div>
+      <div class="hover-row" id="hover-pop-hours-row">
+        <span class="hover-label">Hours:</span>
+        <span class="hover-value" id="hover-pop-hours">07:00 – 15:30 (8.5h)</span>
+      </div>
+      <div class="hover-row" id="hover-pop-coverage-row">
+        <span class="hover-label">Coverage:</span>
+        <span class="hover-value" id="hover-pop-coverage">ICU (Primary)</span>
+      </div>
+      <div class="hover-row">
+        <span class="hover-label">Status:</span>
+        <span class="hover-value" id="hover-pop-status">Solved by CP-SAT</span>
+      </div>
+      <div class="hover-conflict-warn hidden" id="hover-pop-conflict">
+        ⚠️ Rest Conflict: Ergonomic turnaround breach
+      </div>
+    </div>
+    <div class="hover-popover-footer">
+      <span>💡 Click cell to inspect or edit assignment</span>
+    </div>
   </div>
 
   <!-- Modal: New Plan Generation -->

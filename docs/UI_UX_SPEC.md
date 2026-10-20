@@ -285,6 +285,30 @@ Directly beneath each department section, a live summary row computes:
   - **`☕ Pin as Comp Off (Coff)`:** Locks the cell as a Compensatory Off badge (`☕ COFF`). Enforces hard constraint $Y_{e, t} = 0$, guaranteeing the solver never schedules the worker.
   - **`Pin Shift 📌`:** Locks the assigned work shift (e.g. MORN, EVE, NIGHT) so the solver does not alter or reassign it.
 
+#### 3.18 Cell Hover Preview Popover Engine
+* Eliminates visual clutter (removed raw `*` and bracket `*(DEPT)` notation from cell badges) in favor of clean badges with elegant floating tags (`⇄ ICU`).
+* **Delayed Hover Popover (`#cell-hover-popover`):**
+  - Triggers smoothly after a 280ms hover delay (preventing distracting flickers during rapid grid scrolling).
+  - Displays comprehensive telemetry:
+    - Employee Full Name, Code, and Home Department.
+    - Full Date and Day of Week (e.g., `Nov 15, 2026 (Sun)`).
+    - Shift Type, Official Name, and exact operating hours (`07:00 – 15:30 (8.5h)`).
+    - Floating Coverage Details (Target Ward & Tier-2 Floater rank).
+    - Manager Lock Status (`📌 Pinned by Manager` vs `⚡ Solved by CP-SAT`).
+    - Ergonomic Conflict Warning Banner (with specific violation reasons).
+  - Closes automatically on `mouseleave` or when the cell is clicked for editing.
+
+#### 3.19 Direct Sidebar Collapse & Expand Controls (AI Workspace Style)
+* Relocates sidebar toggles directly onto the sidebars and workspace edges, modeled after modern AI agent developer interfaces (ChatGPT, Claude, Cursor, Antigravity IDE):
+  - **Left Departments Sidebar (`#dept-sidebar`):**
+    - Collapse icon button `[◀]` located directly in the sidebar header row (`#sidebar-left-collapse-btn`).
+    - When collapsed, a subtle floating expand tab (`#sidebar-left-expand-btn`) docks neatly on the left workspace edge.
+  - **Right Inspector Panel (`#inspector-panel`):**
+    - Collapse icon button `[▶]` located directly in the inspector header row (`#sidebar-right-collapse-btn`).
+    - When collapsed, a subtle floating expand tab (`#sidebar-right-expand-btn`) docks neatly on the right workspace edge.
+  - Selecting any grid cell automatically re-expands the inspector panel for immediate shift editing.
+  - Ribbon toggle buttons remain synchronized as secondary global shortcuts.
+
 ---
 
 ### 4. Offline State Management & Resilience Patterns

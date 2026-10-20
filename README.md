@@ -23,6 +23,13 @@
 * **Active Working Cell & Crosshairs:** Clicking any cell highlights it with a radiant blue selection ring and highlights the active employee row and calendar date column for effortless tracking across 30 days.
 * **Visual Conflict Indicators:** Highlights hazardous shift rotations (e.g., Night to Morning turnarounds) and consecutive day streaks with pulsing red `⚠️` conflict badges and explanatory tooltips.
 * **Empty Cell Recognition:** Unstaffed/blank slots feature distinct subtle dashed borders so managers instantly spot scheduling gaps.
+* **Cell Hover Preview Popover (Instant Context):**
+  - Hovering on any cell for 280ms opens an intelligent contextual preview card showing Employee Name, Code, Department, Shift Details (timing and hours), Floater Status (`⇄ ICU`), Lock Status, and Labor Rule Warnings without needing to click or change views.
+  - Cell badges feature clean styling with neat floater tags instead of raw asterisk and bracket notations.
+* **Direct Sidebar Controls (AI Agent Workspace Style):**
+  - Instant collapse icon buttons `[◀]` / `[▶]` positioned right on the sidebar headers.
+  - Floating edge expand tabs (`Departments` and `Inspector`) allow effortless one-click expansion and shrinking directly on the workspace boundary.
+  - Selecting any cell automatically expands the inspector panel.
 * **Native Keyboard Navigation & Distinct Cell States:**
   - Distinct Inspector controls: **`🗑️ Set as Empty (Fillable by Solver)`**, **`📌 Pin as Day OFF (DO)`**, and **`☕ Pin as Comp Off (Coff)`**.
   - Empty cells are designated fillable slots where CP-SAT will assign needed shifts. Pinned Day OFFs and Comp Offs enforce hard non-working locks ($Y_{e, t} = 0$).

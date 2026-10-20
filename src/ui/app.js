@@ -385,28 +385,39 @@ function renderStaffCentric(data) {
           badge.className = `shift-badge ${shiftClass} ${floaterClass} ${turnaroundClass}`;
           if (floaterStyle) badge.style.cssText = floaterStyle;
           if (turnaroundTitle) badge.title = turnaroundTitle;
-          badge.innerHTML = `${a.shift_code}${a.is_floating ? `*(${a.department_code})` : ""}${a.is_pinned ? " 📌" : ""}`;
+          const floatTag = a.is_floating ? `<span class="badge-float-indicator" title="Floating coverage to ${a.department_code || ''}">⇄ ${a.department_code || ''}</span>` : "";
+          const pinTag = a.is_pinned ? `<span class="pin-icon">📌</span>` : "";
+          badge.innerHTML = `${a.shift_code || ''}${floatTag}${pinTag}`;
         }
 
         badge.onclick = (e) => {
           e.stopPropagation();
+          hideCellHover();
           selectAssignment(r, dStr, a, rIdx, dIdx, td);
         };
-        td.onclick = () => selectAssignment(r, dStr, a, rIdx, dIdx, td);
+        td.onclick = () => {
+          hideCellHover();
+          selectAssignment(r, dStr, a, rIdx, dIdx, td);
+        };
+        attachCellHover(td, r, dStr, a);
         td.appendChild(badge);
       } else {
         // Empty Cell
         td.classList.add("cell-empty");
-        td.title = "Empty / Unassigned Slot (Click or press key to assign/fill)";
         const offBadge = document.createElement("span");
         offBadge.className = "shift-badge shift-off";
-        offBadge.style.opacity = "0.6";
+        offBadge.style.opacity = "0.5";
         offBadge.textContent = "—";
         offBadge.onclick = (e) => {
           e.stopPropagation();
+          hideCellHover();
           selectAssignment(r, dStr, null, rIdx, dIdx, td);
         };
-        td.onclick = () => selectAssignment(r, dStr, null, rIdx, dIdx, td);
+        td.onclick = () => {
+          hideCellHover();
+          selectAssignment(r, dStr, null, rIdx, dIdx, td);
+        };
+        attachCellHover(td, r, dStr, null);
         td.appendChild(offBadge);
       }
 
@@ -547,9 +558,149 @@ function updateGridCrosshairs(rowIdx, colIdx, activeTd) {
   }
 }
 
+// Cell Hover Preview Engine
+// ==========================================
+function attachCellHover(td, emp, dateStr, assignment) {
+  td.onmouseenter = () => {
+    if (state.hoverTimer) clearTimeout(state.hoverTimer);
+    state.hoverTimer = setTimeout(() => {
+      showCellHover(td, emp, dateStr, assignment);
+    }, 280);
+  };
+
+  td.onmouseleave = () => {
+    if (state.hoverTimer) clearTimeout(state.hoverTimer);
+    hideCellHover();
+  };
+}
+
+function showCellHover(td, emp, dateStr, assignment) {
+  const popover = document.getElementById("cell-hover-popover");
+  if (!popover) return;
+
+  const empEl = document.getElementById("hover-pop-emp");
+  const deptEl = document.getElementById("hover-pop-dept");
+  const dateEl = document.getElementById("hover-pop-date");
+  const shiftEl = document.getElementById("hover-pop-shift");
+  const hoursRow = document.getElementById("hover-pop-hours-row");
+  const hoursEl = document.getElementById("hover-pop-hours");
+  const covRow = document.getElementById("hover-pop-coverage-row");
+  const covEl = document.getElementById("hover-pop-coverage");
+  const statusEl = document.getElementById("hover-pop-status");
+  const conflictEl = document.getElementById("hover-pop-conflict");
+
+  if (empEl) empEl.textContent = `${emp.employee_name} (${emp.employee_code})`;
+  if (deptEl) deptEl.textContent = emp.primary_department_name ? `${emp.primary_department_name} (${emp.primary_department_code || ''})` : "";
+
+  try {
+    const dObj = new Date(dateStr + "T00:00:00");
+    const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    if (dateEl) dateEl.textContent = `${monthNames[dObj.getMonth()]} ${dObj.getDate()}, ${dObj.getFullYear()} (${dayNames[dObj.getDay()]})`;
+  } catch (_) {
+    if (dateEl) dateEl.textContent = dateStr;
+  }
+
+  const shiftObj = assignment && assignment.shift_id && state.shifts ? state.shifts.find(s => s.id === assignment.shift_id) : null;
+
+  if (assignment) {
+    if (assignment.is_comp_off || assignment.shift_code === "COFF") {
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#d97706;font-weight:700;">☕ Compensatory Off (Coff)</span>`;
+      if (hoursRow) hoursRow.classList.add("hidden");
+      if (covRow) covRow.classList.add("hidden");
+      if (statusEl) statusEl.textContent = "📌 Pinned Off Duty";
+    } else if (assignment.is_day_off || assignment.shift_code === "DO") {
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#475569;font-weight:700;">📌 Day OFF (Locked)</span>`;
+      if (hoursRow) hoursRow.classList.add("hidden");
+      if (covRow) covRow.classList.add("hidden");
+      if (statusEl) statusEl.textContent = "📌 Pinned Off Duty";
+    } else if (assignment.is_fixed_off) {
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#475569;font-weight:700;">🔒 Dedicated Regular Day Off</span>`;
+      if (hoursRow) hoursRow.classList.add("hidden");
+      if (covRow) covRow.classList.add("hidden");
+      if (statusEl) statusEl.textContent = "🔒 Contracted Off Duty";
+    } else if (assignment.is_leave) {
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#7c3aed;font-weight:700;">🏖️ ${assignment.shift_name || 'Approved Leave'}</span>`;
+      if (hoursRow) hoursRow.classList.add("hidden");
+      if (covRow) covRow.classList.add("hidden");
+      if (statusEl) statusEl.textContent = "🏖️ Approved Vacation / Leave";
+    } else {
+      const shiftName = shiftObj ? shiftObj.name : (assignment.shift_name || assignment.shift_code);
+      if (shiftEl) shiftEl.textContent = `${shiftName} (${assignment.shift_code})`;
+
+      if (hoursRow) hoursRow.classList.remove("hidden");
+      if (hoursEl) {
+        if (shiftObj) hoursEl.textContent = `${shiftObj.start_time.slice(0, 5)} – ${shiftObj.end_time.slice(0, 5)} (${shiftObj.duration_hours}h)`;
+        else hoursEl.textContent = "Standard Working Shift";
+      }
+
+      if (covRow) covRow.classList.remove("hidden");
+      if (covEl) {
+        if (assignment.is_floating) {
+          covEl.innerHTML = `<span style="color:#d97706;font-weight:700;">⇄ Floating to ${assignment.department_code || ''} (Rank ${assignment.float_rank || 2})</span>`;
+        } else {
+          covEl.textContent = `${assignment.department_code || emp.primary_department_code || ''} (Home Department)`;
+        }
+      }
+
+      if (statusEl) statusEl.textContent = assignment.is_pinned ? "📌 Pinned by Manager" : "⚡ Solved by CP-SAT";
+    }
+
+    if (conflictEl) {
+      if (assignment.has_conflict) {
+        conflictEl.classList.remove("hidden");
+        conflictEl.textContent = `⚠️ Rule Conflict: ${assignment.conflict_reason || 'Labor ergonomic violation'}`;
+      } else {
+        conflictEl.classList.add("hidden");
+      }
+    }
+  } else {
+    // Empty cell
+    if (shiftEl) shiftEl.innerHTML = `<span style="color:#94a3b8;font-style:italic;">⚪ Empty Slot (Unassigned)</span>`;
+    if (hoursRow) hoursRow.classList.add("hidden");
+    if (covRow) covRow.classList.add("hidden");
+    if (statusEl) statusEl.textContent = "⚪ Open (Fillable by Solver)";
+    if (conflictEl) conflictEl.classList.add("hidden");
+  }
+
+  // Position popover relative to td
+  const rect = td.getBoundingClientRect();
+  const popoverWidth = 280;
+  const popoverHeight = 180;
+
+  let left = rect.left + (rect.width / 2) - (popoverWidth / 2);
+  let top = rect.bottom + 8;
+
+  if (left + popoverWidth > window.innerWidth - 10) {
+    left = window.innerWidth - popoverWidth - 10;
+  }
+  if (left < 10) left = 10;
+
+  if (top + popoverHeight > window.innerHeight - 10) {
+    top = rect.top - popoverHeight - 8;
+  }
+  if (top < 10) top = 10;
+
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.round(top)}px`;
+  popover.classList.remove("hidden");
+}
+
+function hideCellHover() {
+  const popover = document.getElementById("cell-hover-popover");
+  if (popover) popover.classList.add("hidden");
+}
+
 async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, colIdx = null, td = null) {
+  hideCellHover();
   state.selectedCell = { emp, dateStr, currentAssignment, rowIdx, colIdx, td };
   updateGridCrosshairs(rowIdx, colIdx, td);
+
+  // If inspector is collapsed, expand it
+  const ip = document.getElementById("inspector-panel");
+  if (ip && ip.classList.contains("collapsed")) {
+    toggleRightInspector(true);
+  }
 
   const content = document.getElementById("inspector-content");
   const actions = document.getElementById("inspector-actions");
@@ -1021,28 +1172,35 @@ function initRibbonTabs() {
     };
   });
 
+  // Direct Sidebar Collapse & Expand Controls (like modern AI agent interfaces)
+  const leftCollapseBtn = document.getElementById("sidebar-left-collapse-btn");
+  if (leftCollapseBtn) {
+    leftCollapseBtn.onclick = () => toggleLeftSidebar(false);
+  }
+
+  const leftExpandBtn = document.getElementById("sidebar-left-expand-btn");
+  if (leftExpandBtn) {
+    leftExpandBtn.onclick = () => toggleLeftSidebar(true);
+  }
+
+  const rightCollapseBtn = document.getElementById("sidebar-right-collapse-btn");
+  if (rightCollapseBtn) {
+    rightCollapseBtn.onclick = () => toggleRightInspector(false);
+  }
+
+  const rightExpandBtn = document.getElementById("sidebar-right-expand-btn");
+  if (rightExpandBtn) {
+    rightExpandBtn.onclick = () => toggleRightInspector(true);
+  }
+
   const toggleSidebarBtn = document.getElementById("toggle-sidebar-btn");
   if (toggleSidebarBtn) {
-    toggleSidebarBtn.onclick = () => {
-      const sb = document.getElementById("dept-sidebar");
-      if (sb) {
-        const isHidden = sb.style.display === "none";
-        sb.style.display = isHidden ? "flex" : "none";
-        toggleSidebarBtn.textContent = isHidden ? "Hide Dept Sidebar" : "Show Dept Sidebar";
-      }
-    };
+    toggleSidebarBtn.onclick = () => toggleLeftSidebar();
   }
 
   const toggleInspectorBtn = document.getElementById("toggle-inspector-btn");
   if (toggleInspectorBtn) {
-    toggleInspectorBtn.onclick = () => {
-      const ip = document.getElementById("inspector-panel");
-      if (ip) {
-        const isHidden = ip.style.display === "none";
-        ip.style.display = isHidden ? "flex" : "none";
-        toggleInspectorBtn.textContent = isHidden ? "Hide Inspector" : "Show Inspector";
-      }
-    };
+    toggleInspectorBtn.onclick = () => toggleRightInspector();
   }
 
   const resetWidthsBtn = document.getElementById("reset-widths-btn");
@@ -1054,8 +1212,58 @@ function initRibbonTabs() {
       if (left) left.style.width = "220px";
       const right = document.getElementById("inspector-panel");
       if (right) right.style.width = "320px";
+      toggleLeftSidebar(true);
+      toggleRightInspector(true);
       alert("Sidebar widths reset to standard layout.");
     };
+  }
+}
+
+function toggleLeftSidebar(forceState) {
+  const sb = document.getElementById("dept-sidebar");
+  const expandBtn = document.getElementById("sidebar-left-expand-btn");
+  const resizer = document.getElementById("resizer-left");
+  const topBtn = document.getElementById("toggle-sidebar-btn");
+  if (!sb) return;
+
+  const isCollapsed = forceState !== undefined ? !forceState : !sb.classList.contains("collapsed");
+
+  if (isCollapsed) {
+    sb.classList.add("collapsed");
+    sb.style.display = "none";
+    if (expandBtn) expandBtn.classList.remove("hidden");
+    if (resizer) resizer.style.display = "none";
+    if (topBtn) topBtn.textContent = "Show Dept Sidebar";
+  } else {
+    sb.classList.remove("collapsed");
+    sb.style.display = "flex";
+    if (expandBtn) expandBtn.classList.add("hidden");
+    if (resizer) resizer.style.display = "";
+    if (topBtn) topBtn.textContent = "Hide Dept Sidebar";
+  }
+}
+
+function toggleRightInspector(forceState) {
+  const ip = document.getElementById("inspector-panel");
+  const expandBtn = document.getElementById("sidebar-right-expand-btn");
+  const resizer = document.getElementById("resizer-right");
+  const topBtn = document.getElementById("toggle-inspector-btn");
+  if (!ip) return;
+
+  const isCollapsed = forceState !== undefined ? !forceState : !ip.classList.contains("collapsed");
+
+  if (isCollapsed) {
+    ip.classList.add("collapsed");
+    ip.style.display = "none";
+    if (expandBtn) expandBtn.classList.remove("hidden");
+    if (resizer) resizer.style.display = "none";
+    if (topBtn) topBtn.textContent = "Show Inspector";
+  } else {
+    ip.classList.remove("collapsed");
+    ip.style.display = "flex";
+    if (expandBtn) expandBtn.classList.add("hidden");
+    if (resizer) resizer.style.display = "";
+    if (topBtn) topBtn.textContent = "Hide Inspector";
   }
 }
 
