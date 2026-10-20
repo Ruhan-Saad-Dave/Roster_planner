@@ -1,0 +1,15 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# SQLite WAL and journal files
+*.db-shm
+*.db-wal
+*.db-journal
+
+# Environments
+.venv/
+env/
+venv/

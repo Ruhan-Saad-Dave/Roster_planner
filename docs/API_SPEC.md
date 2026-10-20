@@ -503,6 +503,30 @@
   - **Query Parameters:** `employee_id: Optional[int]`, `date: Optional[str]`
   - **Response 200 OK:** Unpins specified slots (or all pinned slots if parameters omitted).
 
+* **`DELETE /api/roster/{id}/assignments`**
+  - **Query Parameters:** `employee_id: int`, `date: str`
+  - **Response 200 OK:** Removes assignment on specified date and marks worker as Day OFF.
+  ```json
+  {
+    "plan_id": 12,
+    "employee_id": 10,
+    "date": "2026-11-01",
+    "cleared": true
+  }
+  ```
+
+* **`POST /api/roster/{id}/assignments/toggle-pin`**
+  - **Query Parameters:** `employee_id: int`, `date: str`
+  - **Response 200 OK:** Toggles assignment between pinned (`📌`) and unpinned.
+  ```json
+  {
+    "plan_id": 12,
+    "employee_id": 10,
+    "date": "2026-11-01",
+    "is_pinned": true
+  }
+  ```
+
 #### 4.4 Solver Diagnostics & Deficit Root-Cause Analysis
 * **`GET /api/roster/{id}/diagnostics`**
   - **Response 200 OK:**

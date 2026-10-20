@@ -237,6 +237,34 @@ Directly beneath each department section, a live summary row computes:
   - **Interactive Assistant Bar:** Allows managers or connected external agents to execute natural-language queries (e.g., *"Show me all floaters in ICU this weekend"*, *"Check if John Doe can work Friday night"*, *"Generate 3 variants for December 2026 prioritizing preference satisfaction"*).
   - **Dry-Run Confirmation Card:** Displays what an agent proposes to change (with real-time constraint validation) before applying changes to the database.
 
+#### 3.11 Excel-Style Categorized Ribbon Navigation
+* Replaces monolithic multi-button toolbars with clean contextual tabs:
+  - **`📋 Schedule & Solve` Tab:** Roster generation (`+ New Roster`), active solve operations (`Solve Remaining`, `Prefill Mode`), variant comparison (`Compare Variants`), view selectors (Staff/Slot/Scorecard), preceding month toggle (`📅 Prev Month`), and display density modes.
+  - **`🏢 Organization & Staff` Tab:** Direct database administration (`⚙️ Manage Org` for department operating regimes, staff contracts, and live color pickers) and spreadsheet data ingestion (`📥 Import CSV / Excel Data`).
+  - **`📊 Reports & Exports` Tab:** Instant distribution formats: multi-tab Excel workbooks (`Export Formatted Excel .xlsx`) and printable landscape vectors (`Export PDF`).
+  - **`👁️ View Options` Tab:** Layout toggles (`Toggle Dept Sidebar`, `Toggle Inspector`) and pane geometry reset (`Reset Sidebar Widths`).
+
+#### 3.12 Excel-Style Bottom Status Bar & Dynamic Zoom Engine
+* Persistent footer modeled after modern productivity spreadsheets:
+  - **Left Section (Health & Plan Telemetry):** Real-time health badge (`🟢 100% Staffed`), active roster plan code, and department/staff headcounts.
+  - **Middle Section (View Mode Shortcuts):** Quick-switch icons for Staff-Centric matrix, Slot-Centric matrix, and Workload Audit Scorecard.
+  - **Right Section (Interactive Zoom Engine):**
+    - Continuous zoom slider spanning 65% (bird's-eye monthly overview) to 160% (high-visibility shift inspection).
+    - Discrete step buttons `[−]` and `[+]` (10% increments).
+    - One-click `[100%]` reset button.
+    - Synchronized dual-scaling via CSS custom variable `--zoom-factor` and document zoom styling.
+
+#### 3.13 Resizable Drag-Splitters & Pane Management
+* Vertical splitter handles separating the Department Filter panel, Central Schedule Grid, and Shift Inspector panel:
+  - Smooth pointer-drag resizing with min/max safety limits (160px–500px).
+  - Immediate responsive reflow of schedule grid columns.
+  - Instant reset button to restore default proportions.
+
+#### 3.14 First-Time Manager Onboarding Wizard
+* Welcoming modal prompt for clean database installations:
+  - Offers immediate choice between **"📥 Import My Data"** (CSV template upload) and **"⚡ Start from Scratch"** (pre-loaded sample hospital wards and medical staff).
+  - Includes interactive help documentation and 3-step quick start guide.
+
 ---
 
 ### 4. Offline State Management & Resilience Patterns
