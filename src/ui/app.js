@@ -1277,6 +1277,10 @@ const BUTTON_EXPLANATIONS = {
     title: "📌 Pin / Lock Shift",
     desc: "Locks this shift so that subsequent CP-SAT solver runs will preserve it exactly as chosen.",
   },
+  "inspector-empty-btn": {
+    title: "⚪ Empty Cell (—)",
+    desc: "Clears assignment and sets cell to blank. The solver will consider this cell fillable.",
+  },
   "inspector-clear-btn": {
     title: "⚪ Empty Cell (—)",
     desc: "Clears assignment and sets cell to blank. The solver will consider this cell fillable.",
@@ -1329,9 +1333,17 @@ const BUTTON_EXPLANATIONS = {
     title: "💾 Save Staffing Demand",
     desc: "Saves required minimum staff per shift type to ensure adequate coverage during solver runs.",
   },
+  "demand-preset-1-btn": {
+    title: "1️⃣ Preset: 1 Staff / Shift",
+    desc: "Sets required staffing count to 1 worker for all active shifts across Monday through Sunday.",
+  },
   "preset-1-demand-btn": {
     title: "1️⃣ Preset: 1 Staff / Shift",
     desc: "Sets required staffing count to 1 worker for all active shifts across Monday through Sunday.",
+  },
+  "demand-preset-2-btn": {
+    title: "2️⃣ Preset: 2 Staff / Shift",
+    desc: "Sets required staffing count to 2 workers for all active shifts across Monday through Sunday.",
   },
   "preset-2-demand-btn": {
     title: "2️⃣ Preset: 2 Staff / Shift",
@@ -1529,49 +1541,57 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
 
   // Attach live validator
   document.getElementById("apply-shift-btn").onclick = async () => {
-    const shiftId = parseInt(document.getElementById("target-shift-select").value);
-    const deptId = parseInt(document.getElementById("target-dept-select").value);
+    try {
+      const shiftId = parseInt(document.getElementById("target-shift-select").value);
+      const deptId = parseInt(document.getElementById("target-dept-select").value);
 
-    const val = await apiPost("/api/roster/validate-assignment", {
-      plan_id: state.activePlanId,
-      employee_id: emp.employee_id,
-      target_department_id: deptId,
-      target_shift_type_id: shiftId,
-      target_date: dateStr
-    });
-
-    const fb = document.getElementById("validation-feedback");
-    if (val.is_valid) {
-      fb.innerHTML = `<div class="alert-card success">✓ Valid Assignment! No ergonomic violations detected.</div>`;
-      // Commit
-      await apiPost(`/api/roster/${state.activePlanId}/assignments`, {
+      const val = await apiPost("/api/roster/validate-assignment", {
+        plan_id: state.activePlanId,
         employee_id: emp.employee_id,
-        department_id: deptId,
-        shift_type_id: shiftId,
-        date: dateStr,
-        force_override: false,
-        is_pinned: state.prefillMode
+        target_department_id: deptId,
+        target_shift_type_id: shiftId,
+        target_date: dateStr
       });
-      await loadSchedule();
-    } else {
-      const msgs = val.violations.map(v => `• ${v.message}`).join("<br>");
-      fb.innerHTML = `
-        <div class="alert-card danger">
-          <b>Rule Conflict:</b><br>${msgs}
-          <button id="force-override-btn" class="btn btn-sm" style="margin-top:6px;width:100%;">Force Override Anyway</button>
-        </div>
-      `;
-      document.getElementById("force-override-btn").onclick = async () => {
+
+      const fb = document.getElementById("validation-feedback");
+      if (val.is_valid) {
+        fb.innerHTML = `<div class="alert-card success">✓ Valid Assignment! No ergonomic violations detected.</div>`;
+        // Commit
         await apiPost(`/api/roster/${state.activePlanId}/assignments`, {
           employee_id: emp.employee_id,
           department_id: deptId,
           shift_type_id: shiftId,
           date: dateStr,
-          force_override: true,
-          is_pinned: true
+          force_override: false,
+          is_pinned: state.prefillMode
         });
         await loadSchedule();
-      };
+      } else {
+        const msgs = val.violations.map(v => `• ${v.message}`).join("<br>");
+        fb.innerHTML = `
+          <div class="alert-card danger">
+            <b>Rule Conflict:</b><br>${msgs}
+            <button id="force-override-btn" class="btn btn-sm" style="margin-top:6px;width:100%;">Force Override Anyway</button>
+          </div>
+        `;
+        document.getElementById("force-override-btn").onclick = async () => {
+          try {
+            await apiPost(`/api/roster/${state.activePlanId}/assignments`, {
+              employee_id: emp.employee_id,
+              department_id: deptId,
+              shift_type_id: shiftId,
+              date: dateStr,
+              force_override: true,
+              is_pinned: true
+            });
+            await loadSchedule();
+          } catch (err) {
+            alert("Failed to force override assignment: " + err.message);
+          }
+        };
+      }
+    } catch (err) {
+      alert("Failed to apply shift assignment: " + err.message);
     }
   };
 
@@ -1579,35 +1599,47 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
   const emptyBtn = document.getElementById("inspector-empty-btn");
   if (emptyBtn) {
     emptyBtn.onclick = async () => {
-      await emptySelectedCell();
+      try {
+        await emptySelectedCell();
+      } catch (err) {
+        alert("Failed to clear cell: " + err.message);
+      }
     };
   }
 
   const dayOffBtn = document.getElementById("inspector-dayoff-btn");
   if (dayOffBtn) {
     dayOffBtn.onclick = async () => {
-      await apiPost(`/api/roster/${state.activePlanId}/pin-off`, {
-        employee_id: emp.employee_id,
-        date: dateStr,
-        off_type: "DAY_OFF"
-      });
-      await loadSchedule();
-      const updatedAssign = { shift_code: "DO", is_day_off: true, is_pinned: true, shift_name: "Day OFF (Locked 📌)" };
-      selectAssignment(emp, dateStr, updatedAssign, rowIdx, colIdx, td);
+      try {
+        await apiPost(`/api/roster/${state.activePlanId}/pin-off`, {
+          employee_id: emp.employee_id,
+          date: dateStr,
+          off_type: "DAY_OFF"
+        });
+        await loadSchedule();
+        const updatedAssign = { shift_code: "DO", is_day_off: true, is_pinned: true, shift_name: "Day OFF (Locked 📌)" };
+        selectAssignment(emp, dateStr, updatedAssign, rowIdx, colIdx, td);
+      } catch (err) {
+        alert("Failed to lock Day Off: " + err.message);
+      }
     };
   }
 
   const compOffBtn = document.getElementById("inspector-compoff-btn");
   if (compOffBtn) {
     compOffBtn.onclick = async () => {
-      await apiPost(`/api/roster/${state.activePlanId}/pin-off`, {
-        employee_id: emp.employee_id,
-        date: dateStr,
-        off_type: "COFF"
-      });
-      await loadSchedule();
-      const updatedAssign = { shift_code: "COFF", is_comp_off: true, is_pinned: true, shift_name: "Compensatory Off (Coff 📌)" };
-      selectAssignment(emp, dateStr, updatedAssign, rowIdx, colIdx, td);
+      try {
+        await apiPost(`/api/roster/${state.activePlanId}/pin-off`, {
+          employee_id: emp.employee_id,
+          date: dateStr,
+          off_type: "COFF"
+        });
+        await loadSchedule();
+        const updatedAssign = { shift_code: "COFF", is_comp_off: true, is_pinned: true, shift_name: "Compensatory Off (Coff 📌)" };
+        selectAssignment(emp, dateStr, updatedAssign, rowIdx, colIdx, td);
+      } catch (err) {
+        alert("Failed to lock Comp Off: " + err.message);
+      }
     };
   }
 
@@ -1621,9 +1653,13 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
         alert("Please select or assign a shift first before pinning.");
         return;
       }
-      const res = await apiPost(`/api/roster/${state.activePlanId}/assignments/toggle-pin?employee_id=${emp.employee_id}&date=${dateStr}`, {});
-      await loadSchedule();
-      selectAssignment(emp, dateStr, { ...currentAssignment, is_pinned: res.is_pinned }, rowIdx, colIdx, td);
+      try {
+        const res = await apiPost(`/api/roster/${state.activePlanId}/assignments/toggle-pin?employee_id=${emp.employee_id}&date=${dateStr}`, {});
+        await loadSchedule();
+        selectAssignment(emp, dateStr, { ...currentAssignment, is_pinned: res.is_pinned }, rowIdx, colIdx, td);
+      } catch (err) {
+        alert("Failed to toggle pin: " + err.message);
+      }
     };
   }
 }
@@ -2366,8 +2402,12 @@ function setupEventListeners() {
   const sidebarSolveBtn = document.getElementById("sidebar-solve-btn");
   const onSolveRemaining = async () => {
     if (!state.activePlanId) return;
-    await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
-    await loadSchedule();
+    try {
+      await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
+      await loadSchedule();
+    } catch (err) {
+      alert("Failed to solve remaining blank slots: " + err.message);
+    }
   };
   if (solveRemBtn) solveRemBtn.onclick = onSolveRemaining;
   if (sidebarSolveBtn) sidebarSolveBtn.onclick = onSolveRemaining;
@@ -3152,24 +3192,30 @@ function setupEventListeners() {
   const confirmGenBtn = document.getElementById("confirm-generate-btn");
   if (confirmGenBtn) {
     confirmGenBtn.onclick = async () => {
-      const name = document.getElementById("new-plan-name").value;
-      const year = parseInt(document.getElementById("new-plan-year").value);
-      const month = parseInt(document.getElementById("new-plan-month").value);
-      const variants = parseInt(document.getElementById("new-plan-variants").value);
+      try {
+        const name = document.getElementById("new-plan-name").value;
+        const year = parseInt(document.getElementById("new-plan-year").value);
+        const month = parseInt(document.getElementById("new-plan-month").value);
+        const variants = parseInt(document.getElementById("new-plan-variants").value);
 
-      document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
+        document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
 
-      await runSolverWithEngagingProgress(async () => {
-        return await apiPost("/api/roster/generate", {
-          name,
-          planning_year: year,
-          planning_month: month,
-          variant_count: variants,
-          timeout_seconds: 15
-        });
-      }, 15);
+        const result = await runSolverWithEngagingProgress(async () => {
+          return await apiPost("/api/roster/generate", {
+            name,
+            planning_year: year,
+            planning_month: month,
+            variant_count: variants,
+            timeout_seconds: 15
+          });
+        }, 15);
 
-      await loadPlans();
+        if (result) {
+          await loadPlans();
+        }
+      } catch (err) {
+        alert("Failed to create roster plan: " + err.message);
+      }
     };
   }
 
@@ -3270,9 +3316,13 @@ function setupEventListeners() {
 }
 
 window.promoteVariant = async function(planId) {
-  await apiPost(`/api/roster/${planId}/promote`, {});
-  document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
-  await loadPlans();
+  try {
+    await apiPost(`/api/roster/${planId}/promote`, {});
+    document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
+    await loadPlans();
+  } catch (err) {
+    alert("Failed to promote variant: " + err.message);
+  }
 };
 
 // ==========================================
@@ -3335,31 +3385,35 @@ async function runSolverWithEngagingProgress(generateFn, timeoutLimit = 15) {
     clearInterval(timer);
     if (modal) modal.classList.add("hidden");
     alert("Solver error: " + err.message);
-    throw err;
+    return null;
   }
 }
 
 async function executeRosterGeneration(mode = "blank") {
-  if (mode === "existing" && state.activePlanId) {
-    await runSolverWithEngagingProgress(async () => {
-      return await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
-    }, 15);
-    await loadSchedule();
-  } else {
-    const curPlan = state.plans.find(p => p.id === state.activePlanId);
-    const year = curPlan ? curPlan.planning_year || 2026 : 2026;
-    const month = curPlan ? curPlan.planning_month || 11 : 11;
+  try {
+    if (mode === "existing" && state.activePlanId) {
+      const res = await runSolverWithEngagingProgress(async () => {
+        return await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
+      }, 15);
+      if (res) await loadSchedule();
+    } else {
+      const curPlan = state.plans.find(p => p.id === state.activePlanId);
+      const year = curPlan ? curPlan.planning_year || 2026 : 2026;
+      const month = curPlan ? curPlan.planning_month || 11 : 11;
 
-    await runSolverWithEngagingProgress(async () => {
-      return await apiPost("/api/roster/generate", {
-        name: `Roster Plan (${year}-${String(month).padStart(2, '0')})`,
-        planning_year: year,
-        planning_month: month,
-        variant_count: 3,
-        timeout_seconds: 15
-      });
-    }, 15);
-    await loadPlans();
+      const res = await runSolverWithEngagingProgress(async () => {
+        return await apiPost("/api/roster/generate", {
+          name: `Roster Plan (${year}-${String(month).padStart(2, '0')})`,
+          planning_year: year,
+          planning_month: month,
+          variant_count: 3,
+          timeout_seconds: 15
+        });
+      }, 15);
+      if (res) await loadPlans();
+    }
+  } catch (err) {
+    alert("Roster generation error: " + err.message);
   }
 }
 
