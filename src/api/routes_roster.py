@@ -15,6 +15,7 @@ from src.services.roster_service import (
     generate_roster_plan, solve_remaining_blank_slots,
     validate_drag_and_drop_move, generate_shortage_fix_recommendations
 )
+from src.solver.rules import validate_assignment_candidate
 
 router = APIRouter(prefix="/api/roster", tags=["Roster Planning"])
 
@@ -478,6 +479,17 @@ def get_plan_schedule(
             "previous_month_context": prev_context,
             "view_type": "staff_centric",
             "dates": [d.isoformat() for d in dates],
+            "deficits_by_date": {
+                d.date.isoformat(): {
+                    "deficit_id": d.id,
+                    "department_id": d.department_id,
+                    "department_code": departments[d.department_id].code if d.department_id in departments else "",
+                    "shift_type_id": d.shift_type_id,
+                    "shift_code": shifts[d.shift_type_id].code if d.shift_type_id in shifts else "",
+                    "shortage_count": d.shortage_count,
+                    "reason_code": d.reason_code
+                } for d in deficits
+            },
             "rows": rows
         }
 
@@ -598,6 +610,21 @@ def save_manual_assignment(
             is_floating=is_float
         )
         db.add(new_assign)
+
+    # Check if this assignment resolves an existing deficit log
+    deficit_match = db.query(DeficitLog).filter(
+        DeficitLog.plan_id == plan_id,
+        DeficitLog.department_id == req.department_id,
+        DeficitLog.shift_type_id == req.shift_type_id,
+        DeficitLog.date == req.date
+    ).first()
+    if deficit_match:
+        if deficit_match.shortage_count > 1:
+            deficit_match.shortage_count -= 1
+        else:
+            db.delete(deficit_match)
+        db.flush()
+        plan.total_deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).count()
 
     db.commit()
     return {"message": "Assignment updated successfully.", "is_valid": val["is_valid"]}
@@ -840,3 +867,85 @@ def find_replace_assignments(
 
     db.commit()
     return {"replaced_count": replaced_count, "message": f"Replaced {replaced_count} instance(s) of '{find_upper}' with '{replace_upper}'."}
+
+@router.post("/{plan_id}/resolve-all-deficits")
+def resolve_all_deficits(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).all()
+    if not deficits:
+        return {"resolved_count": 0, "message": "No shortages to resolve."}
+
+    all_emps = db.query(Employee).filter(Employee.is_active == True).all()
+    assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
+    leaves = db.query(LeaveRecord).all()
+
+    resolved_count = 0
+    for d in deficits:
+        working_today = {a.employee_id for a in assignments if a.date == d.date}
+        candidates = []
+        for emp in all_emps:
+            if emp.id in working_today:
+                continue
+            has_vac = any(
+                l.employee_id == emp.id and l.start_date <= d.date <= l.end_date and l.status == "APPROVED"
+                for l in leaves
+            )
+            if has_vac:
+                continue
+            val = validate_assignment_candidate(emp, d.department, d.shift_type, d.date, assignments, leaves)
+            candidates.append({
+                "emp": emp,
+                "violation_count": 0 if val["is_valid"] else len(val["violations"])
+            })
+
+        if candidates:
+            candidates.sort(key=lambda x: x["violation_count"])
+            chosen = candidates[0]["emp"]
+            is_float = (chosen.primary_department_id != d.department_id)
+
+            new_a = RosterAssignment(
+                plan_id=plan_id,
+                employee_id=chosen.id,
+                department_id=d.department_id,
+                shift_type_id=d.shift_type_id,
+                date=d.date,
+                assignment_source="MANUAL_OVERRIDE",
+                is_pinned=True,
+                is_manual_override=True,
+                is_floating=is_float
+            )
+            db.add(new_a)
+            assignments.append(new_a)
+            db.delete(d)
+            resolved_count += 1
+
+    db.flush()
+    plan.total_deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).count()
+    db.commit()
+    return {
+        "resolved_count": resolved_count,
+        "remaining_deficits": plan.total_deficits,
+        "message": f"Successfully auto-resolved {resolved_count} shortage(s) by authorizing overtime coverage."
+    }
+
+@router.delete("/{plan_id}/deficits/{deficit_id}")
+def waive_deficit(plan_id: int, deficit_id: int, db: Session = Depends(get_db)):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    deficit = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id, DeficitLog.id == deficit_id).first()
+    if not deficit:
+        raise HTTPException(status_code=404, detail="Deficit not found.")
+
+    db.delete(deficit)
+    db.flush()
+    plan.total_deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).count()
+    db.commit()
+    return {
+        "message": "Shortage waived / marked on-call. Deficit removed.",
+        "remaining_deficits": plan.total_deficits
+    }

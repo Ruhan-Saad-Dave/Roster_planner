@@ -633,6 +633,55 @@ body {
   color: #e2e8f0;
 }
 
+/* Shortage Pill on Date Table Headers */
+.header-shortage-pill {
+  display: block;
+  background: #dc2626;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 4px;
+  border-radius: 4px;
+  margin-top: 2px;
+  cursor: pointer;
+  letter-spacing: 0.2px;
+  box-shadow: 0 1px 2px rgba(220, 38, 38, 0.4);
+  animation: pulse-shortage 2s infinite ease-in-out;
+  text-align: center;
+}
+
+@keyframes pulse-shortage {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.85; transform: scale(0.96); }
+}
+
+/* Scheduled Off Duty Badge for Solved Roster Cells */
+.scheduled-off-badge {
+  display: inline-block;
+  color: #64748b;
+  font-weight: 600;
+  font-size: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  user-select: none;
+  letter-spacing: 0.3px;
+}
+
+/* Shortage Resolution Card in Modal */
+.shortage-item-card {
+  background: #ffffff;
+  border: 1px solid #fed7aa;
+  border-left: 4px solid #ea580c;
+  border-radius: 6px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
 .dept-pill {
   display: flex;
   align-items: center;

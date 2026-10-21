@@ -133,7 +133,7 @@ def test_crawler_executes_all_button_backend_endpoints(client, sample_scenario):
     target_date = None
     for row in sc_res.json().get("rows", []):
         for d_str, cell in row.get("assignments", {}).items():
-            if cell.get("shift_id") is not None:
+            if cell and cell.get("shift_id") is not None:
                 target_emp_id = row["employee_id"]
                 target_date = d_str
                 break
@@ -206,4 +206,8 @@ def test_crawler_executes_all_button_backend_endpoints(client, sample_scenario):
     clear_canvas_res = client.delete(f"/api/roster/{plan_id}/clear-all")
     assert clear_canvas_res.status_code == 200
     assert clear_canvas_res.json()["cleared"] is True
+
+    # 16. Auto-Resolve Deficits (auto-resolve-all-btn)
+    res_deficits = client.post(f"/api/roster/{plan_id}/resolve-all-deficits")
+    assert res_deficits.status_code == 200
 

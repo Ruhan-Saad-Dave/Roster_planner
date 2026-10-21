@@ -170,6 +170,20 @@ function updateHealthBanner(type, message, deficits = []) {
     banner.className = `health-banner ${type}`;
     const msgEl = document.getElementById("health-message");
     if (msgEl) msgEl.textContent = message;
+
+    if (type === "red" && deficits.length > 0) {
+      banner.style.cursor = "pointer";
+      banner.title = "Click to inspect exact shortages & 1-click fixes";
+      banner.onclick = (e) => {
+        if (e.target.tagName !== "BUTTON") {
+          openShortagesModal();
+        }
+      };
+    } else {
+      banner.style.cursor = "default";
+      banner.title = "";
+      banner.onclick = null;
+    }
   }
 
   const statusPill = document.getElementById("status-health-pill");
@@ -177,35 +191,46 @@ function updateHealthBanner(type, message, deficits = []) {
     if (type === "green") {
       statusPill.textContent = "🟢 100% Staffed";
       statusPill.style.color = "#166534";
+      statusPill.style.cursor = "default";
+      statusPill.onclick = null;
     } else if (type === "yellow") {
       statusPill.textContent = "🟡 Advisory";
       statusPill.style.color = "#854d0e";
+      statusPill.style.cursor = "default";
+      statusPill.onclick = null;
     } else {
       statusPill.textContent = `🔴 Shortages (${deficits.length})`;
       statusPill.style.color = "#991b1b";
+      statusPill.style.cursor = "pointer";
+      statusPill.title = "Click to inspect and fix shortages";
+      statusPill.onclick = () => openShortagesModal();
     }
   }
 
   const actionsContainer = document.getElementById("health-actions");
   actionsContainer.innerHTML = "";
 
-  if (deficits.length > 0 && deficits[0].recommended_fixes && deficits[0].recommended_fixes.length > 0) {
-    const fix = deficits[0].recommended_fixes[0];
-    const fixBtn = document.createElement("button");
-    fixBtn.className = "btn btn-sm btn-primary";
-    fixBtn.textContent = `1-Click Fix: ${fix.description}`;
-    fixBtn.onclick = async () => {
-      await apiPost(`/api/roster/${state.activePlanId}/assignments`, {
-        employee_id: fix.employee_id,
-        department_id: deficits[0].department_id,
-        shift_type_id: deficits[0].shift_type_id,
-        date: deficits[0].date,
-        force_override: true,
-        is_pinned: true
-      });
-      await loadSchedule();
+  if (deficits.length > 0) {
+    // 1-Click Auto-Resolve All Button
+    const autoAllBtn = document.createElement("button");
+    autoAllBtn.className = "btn btn-sm";
+    autoAllBtn.style.cssText = "background:#dc2626;color:#ffffff;font-weight:700;border:none;margin-right:8px;";
+    autoAllBtn.textContent = `⚡ 1-Click Fix All (${deficits.length} Shortages)`;
+    autoAllBtn.onclick = async (e) => {
+      e.stopPropagation();
+      await autoResolveAllShortages();
     };
-    actionsContainer.appendChild(fixBtn);
+    actionsContainer.appendChild(autoAllBtn);
+
+    // Inspect Shortages Button
+    const inspectBtn = document.createElement("button");
+    inspectBtn.className = "btn btn-sm btn-outline";
+    inspectBtn.textContent = "Inspect & Fix 🔍";
+    inspectBtn.onclick = (e) => {
+      e.stopPropagation();
+      openShortagesModal();
+    };
+    actionsContainer.appendChild(inspectBtn);
   }
 }
 
@@ -268,12 +293,29 @@ function renderStaffCentric(data) {
 
   data.dates.forEach(dStr => {
     const th = document.createElement("th");
-    const d = new Date(dStr);
+    const d = new Date(dStr + "T00:00:00");
     const dayName = d.toLocaleDateString("en-US", { weekday: "short" });
     const dayNum = d.getDate();
-    th.innerHTML = `<div>${dayNum}</div><div style="font-size:9px;">${dayName}</div>`;
+
+    let shortagePill = "";
+    if (data.deficits_by_date && data.deficits_by_date[dStr]) {
+      const defInfo = data.deficits_by_date[dStr];
+      const sCode = defInfo.shift_code || "Shift";
+      shortagePill = `<div class="header-shortage-pill" title="⚠️ Shortage: ${defInfo.shortage_count} ${sCode} needed! Click to fix">⚠️ 1 Short</div>`;
+    }
+
+    th.innerHTML = `<div>${dayNum}</div><div style="font-size:9px;">${dayName}</div>${shortagePill}`;
     if (dayName === "Sat" || dayName === "Sun") {
       th.style.background = "#f1f5f9";
+    }
+    if (data.deficits_by_date && data.deficits_by_date[dStr]) {
+      th.style.background = "#fee2e2";
+      th.style.borderBottom = "2px solid #dc2626";
+      th.style.cursor = "pointer";
+      th.onclick = (e) => {
+        e.stopPropagation();
+        openShortagesModal(dStr);
+      };
     }
     headerRow.appendChild(th);
   });
@@ -418,12 +460,21 @@ function renderStaffCentric(data) {
         attachCellHover(td, r, dStr, a);
         td.appendChild(badge);
       } else {
-        // Empty Cell
+        // Empty Cell or Scheduled Rest Day
+        const isSolvedPlan = data.plan && (data.plan.status === "SOLVED" || data.plan.status === "PUBLISHED");
         td.classList.add("cell-empty");
         const offBadge = document.createElement("span");
-        offBadge.className = "shift-badge shift-off";
-        offBadge.style.opacity = "0.5";
-        offBadge.textContent = "—";
+
+        if (isSolvedPlan) {
+          offBadge.className = "scheduled-off-badge";
+          offBadge.textContent = "OFF";
+          offBadge.title = "Scheduled Rest Day (Contracted weekly hours fulfilled)";
+        } else {
+          offBadge.className = "shift-badge shift-off";
+          offBadge.style.opacity = "0.5";
+          offBadge.textContent = "—";
+        }
+
         offBadge.onclick = (e) => {
           e.stopPropagation();
           hideCellHover();
@@ -671,12 +722,22 @@ function showCellHover(td, emp, dateStr, assignment) {
       }
     }
   } else {
-    // Empty cell
-    if (shiftEl) shiftEl.innerHTML = `<span style="color:#94a3b8;font-style:italic;">⚪ Empty Slot (Unassigned)</span>`;
-    if (hoursRow) hoursRow.classList.add("hidden");
-    if (covRow) covRow.classList.add("hidden");
-    if (statusEl) statusEl.textContent = "⚪ Open (Fillable by Solver)";
-    if (conflictEl) conflictEl.classList.add("hidden");
+    // Empty cell or Scheduled Rest Day
+    const isSolved = state.currentScheduleData && state.currentScheduleData.plan &&
+      (state.currentScheduleData.plan.status === "SOLVED" || state.currentScheduleData.plan.status === "PUBLISHED");
+    if (isSolved) {
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#64748b;font-weight:700;">⚪ Scheduled Day Off (OFF)</span>`;
+      if (hoursRow) hoursRow.classList.add("hidden");
+      if (covRow) covRow.classList.add("hidden");
+      if (statusEl) statusEl.textContent = "⚪ Off Duty • Contracted weekly hours fulfilled";
+      if (conflictEl) conflictEl.classList.add("hidden");
+    } else {
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#94a3b8;font-style:italic;">⚪ Empty Slot (Unassigned)</span>`;
+      if (hoursRow) hoursRow.classList.add("hidden");
+      if (covRow) covRow.classList.add("hidden");
+      if (statusEl) statusEl.textContent = "⚪ Open (Fillable by Solver)";
+      if (conflictEl) conflictEl.classList.add("hidden");
+    }
   }
 
   // Position popover relative to td
@@ -904,7 +965,160 @@ async function openEmployeeEditor(empId) {
   }
 }
 
+window.openShortagesModal = async function(filterDate = null) {
+  hideCellHover();
+  hideEmployeeHover();
+  hideButtonTooltip();
+
+  const modal = document.getElementById("modal-shortages-resolver");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+
+  // Wire up action buttons inside modal if not yet wired
+  const autoBtn = document.getElementById("auto-resolve-all-btn");
+  if (autoBtn && !autoBtn.dataset.bound) {
+    autoBtn.dataset.bound = "true";
+    autoBtn.onclick = () => autoResolveAllShortages();
+  }
+  const slotBtn = document.getElementById("modal-switch-slot-btn");
+  if (slotBtn && !slotBtn.dataset.bound) {
+    slotBtn.dataset.bound = "true";
+    slotBtn.onclick = () => {
+      modal.classList.add("hidden");
+      const viewSelect = document.getElementById("view-select");
+      if (viewSelect) {
+        viewSelect.value = "slot_centric";
+        loadSchedule();
+      }
+    };
+  }
+
+  const container = document.getElementById("shortages-list-container");
+  const countBadge = document.getElementById("shortage-modal-count-badge");
+  if (!container) return;
+
+  container.innerHTML = `<div style="text-align:center;padding:16px;color:var(--text-muted);">Analyzing roster shortages and evaluating candidate fixes...</div>`;
+
+  try {
+    const deficits = await apiGet(`/api/roster/${state.activePlanId}/deficits`);
+    if (countBadge) {
+      countBadge.textContent = `${deficits.length} Shortage${deficits.length === 1 ? "" : "s"}`;
+    }
+
+    if (deficits.length === 0) {
+      container.innerHTML = `
+        <div style="text-align:center;padding:24px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;color:#166534;">
+          <div style="font-size:24px;margin-bottom:6px;">🎉</div>
+          <b>All Clear — 0 Shortages!</b>
+          <div style="font-size:12px;margin-top:4px;">100% of required shifts across all departments are fully staffed. Zero ergonomic violations.</div>
+        </div>
+      `;
+      return;
+    }
+
+    let html = "";
+    deficits.forEach((d, idx) => {
+      const dObj = new Date(d.date + "T00:00:00");
+      const dayNames = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const formattedDate = `${monthNames[dObj.getMonth()]} ${dObj.getDate()}, ${dObj.getFullYear()} (${dayNames[dObj.getDay()]})`;
+
+      let recButtons = "";
+      if (d.recommended_fixes && d.recommended_fixes.length > 0) {
+        d.recommended_fixes.forEach(fix => {
+          const btnClass = fix.is_overtime ? "btn-warning" : "btn-primary";
+          const icon = fix.is_overtime ? "⚡" : "✓";
+          recButtons += `
+            <button class="btn btn-sm ${btnClass}" style="font-size:11px;padding:5px 10px;text-align:left;display:flex;align-items:center;gap:6px;" onclick="applyShortageFix(${d.deficit_id}, ${fix.employee_id}, ${d.department_id}, ${d.shift_type_id}, '${d.date}')">
+              <span>${icon}</span>
+              <span>${fix.description}</span>
+            </button>
+          `;
+        });
+      } else {
+        recButtons = `<span style="font-size:11px;color:var(--text-muted);font-style:italic;">No off-duty employees available. Use auto-resolve or waive this deficit.</span>`;
+      }
+
+      html += `
+        <div class="shortage-item-card">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">
+            <div>
+              <div style="font-weight:700;font-size:13px;color:#9a3412;">
+                Shortage #${idx + 1}: ${formattedDate}
+              </div>
+              <div style="font-size:11.5px;color:var(--text-muted);margin-top:2px;">
+                Department: <b>${d.department_name}</b> &bull; Shift: <b>${d.shift_name}</b> &bull; Missing: <span style="color:#dc2626;font-weight:700;">${d.shortage_count} worker</span>
+              </div>
+            </div>
+            <button class="btn btn-sm" style="font-size:10px;background:#fef2f2;border-color:#fca5a5;color:#991b1b;" title="Waive deficit / mark shift as on-call" onclick="waiveShortage(${d.deficit_id})">
+              Waive Deficit
+            </button>
+          </div>
+          <div style="border-top:1px solid #ffedd5;padding-top:6px;display:flex;flex-direction:column;gap:6px;">
+            <span style="font-size:11px;font-weight:600;color:#9a3412;">Recommended 1-Click Fixes:</span>
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              ${recButtons}
+            </div>
+          </div>
+        </div>
+      `;
+    });
+
+    container.innerHTML = html;
+  } catch (err) {
+    container.innerHTML = `<div style="color:#dc2626;padding:12px;">Failed to load shortages: ${err.message}</div>`;
+  }
+};
+
+window.applyShortageFix = async function(deficitId, employeeId, departmentId, shiftTypeId, dateStr) {
+  try {
+    await apiPost(`/api/roster/${state.activePlanId}/assignments`, {
+      employee_id: employeeId,
+      department_id: departmentId,
+      shift_type_id: shiftTypeId,
+      date: dateStr,
+      force_override: true,
+      is_pinned: true
+    });
+    await loadSchedule();
+    await openShortagesModal();
+  } catch (err) {
+    alert("Error applying fix: " + err.message);
+  }
+};
+
+window.waiveShortage = async function(deficitId) {
+  try {
+    await apiDelete(`/api/roster/${state.activePlanId}/deficits/${deficitId}`);
+    await loadSchedule();
+    await openShortagesModal();
+  } catch (err) {
+    alert("Error waiving shortage: " + err.message);
+  }
+};
+
+window.autoResolveAllShortages = async function() {
+  if (!confirm("Auto-resolve all shortages by authorizing balanced overtime across available staff?")) return;
+  try {
+    const res = await apiPost(`/api/roster/${state.activePlanId}/resolve-all-deficits`, {});
+    alert(res.message || "Shortages resolved successfully!");
+    const modal = document.getElementById("modal-shortages-resolver");
+    if (modal) modal.classList.add("hidden");
+    await loadSchedule();
+  } catch (err) {
+    alert("Error auto-resolving shortages: " + err.message);
+  }
+};
+
 const BUTTON_EXPLANATIONS = {
+  "auto-resolve-all-btn": {
+    title: "⚡ Auto-Resolve All Shortages",
+    desc: "Automatically assigns eligible staff with balanced overtime to cover all understaffed shifts, eliminating all deficits.",
+  },
+  "modal-switch-slot-btn": {
+    title: "📋 Slot-Centric View",
+    desc: "Switch to slot-centric view to inspect staff coverage and deficits slot-by-slot.",
+  },
   "welcome-setup-btn": {
     title: "🚀 Setup Wizard",
     desc: "Opens the 3-step setup wizard to import existing spreadsheets, create departments from scratch, or load demo rosters.",
@@ -1235,7 +1449,13 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
   } else if (currentAssignment && currentAssignment.is_fixed_off) {
     statusHtml = `<div class="brand-badge" style="background:#f1f5f9;color:#475569;margin-top:6px;display:inline-block;">Dedicated Regular Day Off</div>`;
   } else if (!currentAssignment || !currentAssignment.shift_id) {
-    statusHtml = `<div class="brand-badge" style="background:#f8fafc;color:#64748b;margin-top:6px;display:inline-block;border:1px dashed #cbd5e1;">Empty Cell (Fillable by Solver)</div>`;
+    const isSolved = state.currentScheduleData && state.currentScheduleData.plan &&
+      (state.currentScheduleData.plan.status === "SOLVED" || state.currentScheduleData.plan.status === "PUBLISHED");
+    if (isSolved) {
+      statusHtml = `<div class="brand-badge" style="background:#f1f5f9;color:#475569;margin-top:6px;display:inline-block;border:1px solid #cbd5e1;">⚪ Scheduled Rest Day (OFF) • Contract Target Fulfilled</div>`;
+    } else {
+      statusHtml = `<div class="brand-badge" style="background:#f8fafc;color:#64748b;margin-top:6px;display:inline-block;border:1px dashed #cbd5e1;">Empty Cell (Fillable by Solver)</div>`;
+    }
   }
 
   content.innerHTML = `

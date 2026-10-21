@@ -1142,6 +1142,43 @@
     </div>
   </div>
 
+  <!-- Modal: Shortage Resolution & Conflict Inspector -->
+  <div id="modal-shortages-resolver" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 780px; width: 95%;">
+      <div class="modal-header" style="background:#fee2e2;color:#991b1b;">
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">⚠️</span>
+          <span style="font-weight:700;">Shortage & Conflict Resolution Center</span>
+          <span id="shortage-modal-count-badge" class="badge" style="background:#dc2626;color:#fff;font-size:11px;padding:2px 8px;border-radius:12px;">5 Shortages</span>
+        </span>
+        <button class="btn btn-sm close-modal" style="color:#991b1b;background:transparent;border:none;font-size:18px;">&times;</button>
+      </div>
+      <div class="modal-body" style="padding: 16px;">
+        <!-- Root Cause Explanatory Banner -->
+        <div style="background:#fef2f2;border:1px solid #fca5a5;border-radius:8px;padding:12px 14px;margin-bottom:14px;">
+          <div style="font-weight:700;color:#991b1b;font-size:13px;display:flex;align-items:center;gap:6px;">
+            <span>ℹ️ Mathematical Capacity Analysis</span>
+          </div>
+          <div style="font-size:12px;color:#7f1d1d;margin-top:4px;line-height:1.45;">
+            Your active roster requires <b>3 shifts/day &times; 7 days = 21 shifts/week</b>. With <b>4 employees</b> capped at <b>40h/week (5 shifts)</b>, the maximum contract capacity is <b>20 shifts/week</b>. This creates an inevitable shortfall of <b>1 shift every Sunday</b> unless overtime is authorized or staffing demand is reduced.
+          </div>
+          <div style="display:flex;gap:10px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+            <button id="auto-resolve-all-btn" class="btn btn-sm" style="background:#dc2626;color:#fff;font-weight:700;border:none;padding:6px 14px;box-shadow:0 2px 4px rgba(220,38,38,0.3);">⚡ 1-Click Auto-Resolve All Shortages (Authorize Overtime)</button>
+            <button id="modal-switch-slot-btn" class="btn btn-sm" style="background:#fff;border-color:#fca5a5;color:#991b1b;">📋 Inspect in Slot View</button>
+          </div>
+        </div>
+
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:10px;color:var(--text-main);">Identified Understaffed Shifts & Recommended 1-Click Fixes:</h4>
+        <div id="shortages-list-container" style="display:flex;flex-direction:column;gap:10px;max-height:360px;overflow-y:auto;padding-right:4px;">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-sm close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Excel-Style Bottom Status Bar -->
   <footer class="status-bar" id="status-bar">
     <div class="status-left">

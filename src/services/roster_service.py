@@ -337,26 +337,58 @@ def generate_shortage_fix_recommendations(
     working_emps_today = {a.employee_id for a in assignments if a.date == target_date}
 
     recommendations = []
+    overtime_candidates = []
+
     for emp in all_emps:
         if emp.id in working_emps_today:
             continue
-        eval_res = validate_assignment_candidate(emp, dept, shift, target_date, assignments, leaves)
-        if eval_res["is_valid"]:
-            is_float = (emp.primary_department_id != dept.id)
-            rank = 1
-            if is_float:
-                eligs = {el.department_id: el.preference_rank for el in emp.eligibilities}
-                rank = eligs.get(dept.id, 2)
 
+        # Skip if on approved leave
+        has_vacation = any(
+            l.employee_id == emp.id and l.start_date <= target_date <= l.end_date and l.status == "APPROVED"
+            for l in leaves
+        )
+        if has_vacation:
+            continue
+
+        eval_res = validate_assignment_candidate(emp, dept, shift, target_date, assignments, leaves)
+        is_float = (emp.primary_department_id != dept.id)
+        rank = 1
+        if is_float:
+            eligs = {el.department_id: el.preference_rank for el in emp.eligibilities}
+            rank = eligs.get(dept.id, 2)
+
+        if eval_res["is_valid"]:
             recommendations.append({
                 "employee_id": emp.id,
                 "employee_name": emp.name,
                 "primary_dept": emp.primary_department.name,
                 "is_floating": is_float,
                 "float_rank": rank,
-                "description": f"Borrow {emp.name} ({'Floater from ' + emp.primary_department.code if is_float else 'Off-duty Home Staff'}). Zero ergonomic conflicts."
+                "is_overtime": False,
+                "description": f"Assign {emp.name} ({'Floater from ' + emp.primary_department.code if is_float else 'Off-duty Staff'}). Zero ergonomic conflicts."
             })
             if len(recommendations) >= 3:
                 break
+        else:
+            v_msgs = [v["message"] for v in eval_res.get("violations", [])]
+            summary_msg = "; ".join(v_msgs)
+            if len(summary_msg) > 80:
+                summary_msg = summary_msg[:77] + "..."
+            overtime_candidates.append({
+                "employee_id": emp.id,
+                "employee_name": emp.name,
+                "primary_dept": emp.primary_department.name,
+                "is_floating": is_float,
+                "float_rank": rank,
+                "is_overtime": True,
+                "violation_count": len(eval_res.get("violations", [])),
+                "description": f"Authorize Overtime for {emp.name} ({summary_msg})"
+            })
+
+    # If no zero-conflict candidates exist, offer the best overtime/exception candidates!
+    if not recommendations and overtime_candidates:
+        overtime_candidates.sort(key=lambda x: x["violation_count"])
+        recommendations.extend(overtime_candidates[:3])
 
     return recommendations
