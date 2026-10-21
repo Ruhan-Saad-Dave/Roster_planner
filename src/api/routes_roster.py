@@ -322,6 +322,16 @@ def get_plan_schedule(
         rows = []
         assign_by_emp_date = {(a.employee_id, a.date): a for a in assignments}
 
+        # Precompute employee weekly hours and shift counts to identify overtime & earned comp offs
+        emp_weekly_hours = {}
+        emp_weekly_shifts = {}
+        for a in assignments:
+            if a.shift_type_id in shifts:
+                wk_key = (a.employee_id, a.date.isocalendar()[:2])
+                dur = shifts[a.shift_type_id].duration_hours or 8.0
+                emp_weekly_hours[wk_key] = emp_weekly_hours.get(wk_key, 0.0) + dur
+                emp_weekly_shifts[wk_key] = emp_weekly_shifts.get(wk_key, 0) + 1
+
         for emp in employees:
             if department_id and emp.primary_department_id != department_id:
                 continue
@@ -441,7 +451,62 @@ def get_plan_schedule(
                 else:
                     consecutive_work_days = 0
                     prev_shift = None
-                    emp_assigns[d.isoformat()] = None  # Empty cell
+
+                    w_key = (emp.id, d.isocalendar()[:2])
+                    w_hours = emp_weekly_hours.get(w_key, 0.0)
+                    w_shifts = emp_weekly_shifts.get(w_key, 0)
+                    contract_hours = emp.max_hours_week or 40.0
+                    is_solved_plan = plan.status in ["SOLVED", "PUBLISHED"]
+
+                    if is_solved_plan and (w_hours >= contract_hours or w_shifts >= 5):
+                        # Earned Compensatory Off due to overtime / contract hours fulfilled!
+                        emp_assigns[d.isoformat()] = {
+                            "assignment_id": None,
+                            "shift_id": None,
+                            "shift_code": "COFF",
+                            "shift_name": f"Earned Comp Off (Overtime Holiday: {round(w_hours, 1)}h worked)",
+                            "department_id": None,
+                            "department_code": "",
+                            "department_color": "#D97706",
+                            "is_floating": False,
+                            "float_rank": 1,
+                            "is_pinned": False,
+                            "is_manual_override": False,
+                            "has_conflict": False,
+                            "conflict_reason": None,
+                            "is_leave": False,
+                            "is_day_off": False,
+                            "is_comp_off": True,
+                            "is_earned_coff": True,
+                            "earned_hours": round(w_hours, 1),
+                            "leave_type": "COFF",
+                            "is_fixed_off": False
+                        }
+                    elif is_solved_plan:
+                        # Regular scheduled rest day
+                        emp_assigns[d.isoformat()] = {
+                            "assignment_id": None,
+                            "shift_id": None,
+                            "shift_code": "OFF",
+                            "shift_name": "Scheduled Rest Day",
+                            "department_id": None,
+                            "department_code": "",
+                            "department_color": "#64748B",
+                            "is_floating": False,
+                            "float_rank": 1,
+                            "is_pinned": False,
+                            "is_manual_override": False,
+                            "has_conflict": False,
+                            "conflict_reason": None,
+                            "is_leave": False,
+                            "is_day_off": True,
+                            "is_comp_off": False,
+                            "is_earned_coff": False,
+                            "leave_type": "DAY_OFF",
+                            "is_fixed_off": False
+                        }
+                    else:
+                        emp_assigns[d.isoformat()] = None  # Empty cell in draft/blank canvas
 
             dept_obj = departments.get(emp.primary_department_id)
             dept_color = dept_obj.color_code if dept_obj else "#3B82F6"
@@ -948,4 +1013,79 @@ def waive_deficit(plan_id: int, deficit_id: int, db: Session = Depends(get_db)):
     return {
         "message": "Shortage waived / marked on-call. Deficit removed.",
         "remaining_deficits": plan.total_deficits
+    }
+
+@router.post("/{plan_id}/auto-award-compoffs")
+def auto_award_compoffs(plan_id: int, db: Session = Depends(get_db)):
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    employees = db.query(Employee).filter(Employee.is_active == True).all()
+    shifts = {s.id: s for s in db.query(ShiftType).all()}
+    assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
+    leaves = db.query(LeaveRecord).all()
+
+    assign_by_emp = {}
+    for a in assignments:
+        assign_by_emp.setdefault(a.employee_id, {})[a.date] = a
+
+    leave_by_emp_date = set()
+    for l in leaves:
+        cur = l.start_date
+        while cur <= l.end_date:
+            leave_by_emp_date.add((l.employee_id, cur))
+            cur += timedelta(days=1)
+
+    horizon_days = (plan.end_date - plan.start_date).days + 1
+    dates = [plan.start_date + timedelta(days=t) for t in range(horizon_days)]
+
+    awarded_count = 0
+    for emp in employees:
+        emp_assigns = assign_by_emp.get(emp.id, {})
+        weeks = {}
+        for d in dates:
+            iso_yr, iso_wk, _ = d.isocalendar()
+            weeks.setdefault((iso_yr, iso_wk), []).append(d)
+
+        for (iso_yr, iso_wk), w_dates in weeks.items():
+            worked_shifts = [emp_assigns[d] for d in w_dates if d in emp_assigns and emp_assigns[d].shift_type_id in shifts]
+            total_hours = sum(shifts[a.shift_type_id].duration_hours for a in worked_shifts)
+            shift_count = len(worked_shifts)
+
+            contract_cap = emp.max_hours_week or 40.0
+            if total_hours >= contract_cap or shift_count >= 5:
+                # Find off days in this week
+                unassigned_days = [d for d in w_dates if d not in emp_assigns and (emp.id, d) not in leave_by_emp_date]
+                for target_day in unassigned_days:
+                    try:
+                        new_leave = LeaveRecord(
+                            employee_id=emp.id,
+                            start_date=target_day,
+                            end_date=target_day,
+                            leave_type="COFF",
+                            notes=f"Earned Comp Off (Overtime Holiday: {round(total_hours, 1)}h worked in Wk {iso_wk})",
+                            status="APPROVED"
+                        )
+                        db.add(new_leave)
+                        db.flush()
+                    except Exception:
+                        db.rollback()
+                        new_leave = LeaveRecord(
+                            employee_id=emp.id,
+                            start_date=target_day,
+                            end_date=target_day,
+                            leave_type="OTHER",
+                            notes=f"COFF: Earned Holiday ({round(total_hours, 1)}h overtime worked in Wk {iso_wk})",
+                            status="APPROVED"
+                        )
+                        db.add(new_leave)
+                        db.flush()
+                    leave_by_emp_date.add((emp.id, target_day))
+                    awarded_count += 1
+
+    db.commit()
+    return {
+        "awarded_count": awarded_count,
+        "message": f"Successfully awarded and pinned {awarded_count} Compensatory Off (COFF) holiday(s) for employees who worked overtime."
     }

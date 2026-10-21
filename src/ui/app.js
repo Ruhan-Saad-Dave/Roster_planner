@@ -672,10 +672,11 @@ function showCellHover(td, emp, dateStr, assignment) {
 
   if (assignment) {
     if (assignment.is_comp_off || assignment.shift_code === "COFF") {
-      if (shiftEl) shiftEl.innerHTML = `<span style="color:#d97706;font-weight:700;">☕ Compensatory Off (Coff)</span>`;
+      const earnedText = assignment.is_earned_coff ? `☕ Earned Comp Off (Overtime Holiday: ${assignment.earned_hours || '40+'}h worked)` : "☕ Compensatory Off (Coff)";
+      if (shiftEl) shiftEl.innerHTML = `<span style="color:#d97706;font-weight:700;">${earnedText}</span>`;
       if (hoursRow) hoursRow.classList.add("hidden");
       if (covRow) covRow.classList.add("hidden");
-      if (statusEl) statusEl.textContent = "📌 Pinned Off Duty";
+      if (statusEl) statusEl.textContent = assignment.is_earned_coff ? "☕ Earned Holiday (Overtime Compensation)" : "📌 Pinned Comp Off";
     } else if (assignment.is_day_off || assignment.shift_code === "DO") {
       if (shiftEl) shiftEl.innerHTML = `<span style="color:#475569;font-weight:700;">📌 Day OFF (Locked)</span>`;
       if (hoursRow) hoursRow.classList.add("hidden");
@@ -1155,6 +1156,10 @@ const BUTTON_EXPLANATIONS = {
     title: "🔍 Find & Replace Shifts",
     desc: "Search for specific shift codes across the month and batch replace or visually highlight all matching cells.",
   },
+  "award-compoff-btn": {
+    title: "☕ Award Comp Offs (COFF)",
+    desc: "Scans each employee's schedule and awards earned Compensatory Off holidays for working overtime or extra shifts.",
+  },
   "clear-canvas-btn": {
     title: "🗑️ Clear Canvas (Reset)",
     desc: "Clears all shifts and resets all cells back to empty (—) so you can start fresh or rebuild from scratch.",
@@ -1441,7 +1446,8 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
 
   let statusHtml = "";
   if (currentAssignment && currentAssignment.is_comp_off) {
-    statusHtml = `<div class="brand-badge" style="background:#fef3c7;color:#92400e;margin-top:6px;display:inline-block;">☕ Pinned Comp Off: ${currentAssignment.shift_name}</div>`;
+    const earnedNote = currentAssignment.is_earned_coff ? ` (Earned Overtime Holiday for ${currentAssignment.earned_hours || '40+'}h worked)` : "";
+    statusHtml = `<div class="brand-badge" style="background:#fef3c7;color:#92400e;margin-top:6px;display:inline-block;">☕ Compensatory Off: ${currentAssignment.shift_name || 'Earned Holiday'}${earnedNote}</div>`;
   } else if (currentAssignment && currentAssignment.is_day_off) {
     statusHtml = `<div class="brand-badge" style="background:#e2e8f0;color:#1e293b;margin-top:6px;display:inline-block;">📌 Pinned Day OFF (Locked)</div>`;
   } else if (currentAssignment && currentAssignment.is_leave) {
@@ -2664,6 +2670,24 @@ function setupEventListeners() {
         return;
       }
       document.getElementById("modal-confirm-clear-canvas").classList.remove("hidden");
+    };
+  }
+
+  // Award Comp Offs (COFF) for Overtime Ribbon Action
+  const awardCoffBtn = document.getElementById("award-compoff-btn");
+  if (awardCoffBtn) {
+    awardCoffBtn.onclick = async () => {
+      if (!state.activePlanId) {
+        alert("Please select or generate a roster plan first.");
+        return;
+      }
+      try {
+        const res = await apiPost(`/api/roster/${state.activePlanId}/auto-award-compoffs`, {});
+        alert(res.message || "Compensatory Off (COFF) holidays awarded to staff who worked overtime!");
+        await loadSchedule();
+      } catch (err) {
+        alert("Error awarding comp offs: " + err.message);
+      }
     };
   }
 
