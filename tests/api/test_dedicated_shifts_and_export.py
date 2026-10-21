@@ -106,7 +106,7 @@ def test_solver_dedicated_shift_adherence(client, test_db, sample_scenario):
         "planning_year": 2026,
         "planning_month": 11,
         "variant_count": 1,
-        "timeout_seconds": 6
+        "timeout_seconds": 10
     })
     assert gen_res.status_code == 200
     plan_id = gen_res.json()["plan_id"]

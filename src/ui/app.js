@@ -2513,7 +2513,7 @@ function setupEventListeners() {
       const deptId = parseInt(deptSelect.value);
       try {
         await apiPost(`/api/departments/${deptId}/apply-shift-regime?regime=3_shifts`);
-        await loadDepartmentDemandMatrix(deptId);
+        await loadDepartmentDemand(deptId);
         alert("Applied Standard 3-Shift Regime (Morning, Evening, Night) to department.");
       } catch (err) {
         alert("Failed to apply regime: " + err.message);
@@ -2529,7 +2529,7 @@ function setupEventListeners() {
       const deptId = parseInt(deptSelect.value);
       try {
         await apiPost(`/api/departments/${deptId}/apply-shift-regime?regime=hybrid_weekday3_weekend2`);
-        await loadDepartmentDemandMatrix(deptId);
+        await loadDepartmentDemand(deptId);
         alert("Applied Dynamic Hybrid Regime (3 Shifts Weekdays / 2 Shifts Weekends) to department.");
       } catch (err) {
         alert("Failed to apply regime: " + err.message);
@@ -2545,7 +2545,7 @@ function setupEventListeners() {
       const deptId = parseInt(deptSelect.value);
       try {
         await apiPost(`/api/departments/${deptId}/apply-shift-regime?regime=2_shifts`);
-        await loadDepartmentDemandMatrix(deptId);
+        await loadDepartmentDemand(deptId);
         alert("Applied Lean 2-Shift Regime (Morning & Night only) to department.");
       } catch (err) {
         alert("Failed to apply regime: " + err.message);
