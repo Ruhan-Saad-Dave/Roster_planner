@@ -582,6 +582,57 @@ body {
   text-align: center;
 }
 
+/* Clickable Employee Card */
+.emp-clickable {
+  cursor: pointer !important;
+  transition: all 0.15s ease;
+}
+
+.emp-clickable:hover {
+  background: #f1f5f9 !important;
+  box-shadow: inset 0 0 0 1px #3b82f6;
+}
+
+/* Floating Button Action Explanation Tooltip */
+.button-action-tooltip {
+  position: fixed;
+  z-index: 1050;
+  max-width: 290px;
+  background: #0f172a;
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 7px;
+  padding: 8px 12px;
+  font-size: 11.5px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  pointer-events: none;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+
+.button-action-tooltip.hidden {
+  opacity: 0;
+  pointer-events: none;
+  display: none !important;
+}
+
+.btn-tip-header {
+  font-weight: 700;
+  font-size: 11.5px;
+  color: #60a5fa;
+  margin-bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.btn-tip-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #e2e8f0;
+}
+
 .dept-pill {
   display: flex;
   align-items: center;

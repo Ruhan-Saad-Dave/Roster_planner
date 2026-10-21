@@ -221,6 +221,52 @@
     </div>
   </div>
 
+  <!-- Floating Employee Hover Summary Popover -->
+  <div id="emp-hover-popover" class="cell-hover-popover hidden" style="width: 320px;">
+    <div class="hover-popover-header">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <div class="hover-emp-name" id="emp-hover-name">Employee Name</div>
+        <span id="emp-hover-dept-badge" class="dept-badge-tag" style="background:#3b82f6;">ICU</span>
+      </div>
+      <div class="hover-emp-dept" id="emp-hover-code-dept">EMP001 • Primary Department</div>
+    </div>
+    <div class="hover-popover-body">
+      <div class="hover-row">
+        <span class="hover-label">Contract Max:</span>
+        <span class="hover-value" id="emp-hover-hours">40.0h / week</span>
+      </div>
+      <div class="hover-row">
+        <span class="hover-label">Regular Off:</span>
+        <span class="hover-value" id="emp-hover-fixed-off">Saturday, Sunday</span>
+      </div>
+      <div class="hover-row">
+        <span class="hover-label">This Month:</span>
+        <span class="hover-value" id="emp-hover-workload">22 shifts (187.0h) • 10 Nights</span>
+      </div>
+      <div class="hover-row">
+        <span class="hover-label">Time Off:</span>
+        <span class="hover-value" id="emp-hover-timeoff">8 Days Off • 0 Vacations</span>
+      </div>
+      <div class="hover-row" id="emp-hover-prev-row">
+        <span class="hover-label">Prev Month:</span>
+        <span class="hover-value" id="emp-hover-prev-stats">168.0h (8 Nights)</span>
+      </div>
+      <div class="hover-row">
+        <span class="hover-label">Cross-Floating:</span>
+        <span class="hover-value" id="emp-hover-floating">Home Dept Only</span>
+      </div>
+    </div>
+    <div class="hover-popover-footer" style="background:#eff6ff; color:#1d4ed8; border-top: 1px solid #dbeafe; padding: 6px 10px; margin-top: 8px; border-radius: 4px;">
+      <span>✏️ <b>Click</b> employee to edit profile, hours & regular off days</span>
+    </div>
+  </div>
+
+  <!-- Floating Button Action Explanation Tooltip -->
+  <div id="button-action-tooltip" class="button-action-tooltip hidden">
+    <div class="btn-tip-header" id="btn-tip-title">Action Title</div>
+    <div class="btn-tip-desc" id="btn-tip-desc">Short explanation of what this button does.</div>
+  </div>
+
   <!-- Modal: New Plan Generation -->
   <div id="modal-new-plan" class="modal-overlay hidden">
     <div class="modal-content">

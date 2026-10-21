@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.db.session import get_db
-from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Department, ShiftType, Employee, LeaveRecord
+from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Department, ShiftType, Employee, LeaveRecord, EmployeeDepartmentEligibility
 from src.api.schemas import (
     GenerateRosterRequest, ValidateAssignmentRequest,
     ManualAssignmentRequest, PrefillShiftsRequest, FindReplaceRequest,
@@ -218,6 +218,18 @@ def get_plan_schedule(
     shifts = {s.id: s for s in db.query(ShiftType).all()}
     assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
     deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).all()
+    raw_eligibilities = db.query(EmployeeDepartmentEligibility).all()
+    elig_by_emp = {}
+    for el in raw_eligibilities:
+        d_name = departments[el.department_id].name if el.department_id in departments else ""
+        d_code = departments[el.department_id].code if el.department_id in departments else ""
+        elig_by_emp.setdefault(el.employee_id, []).append({
+            "department_id": el.department_id,
+            "department_code": d_code,
+            "department_name": d_name,
+            "preference_rank": el.preference_rank,
+            "can_float": el.can_float
+        })
 
     horizon_days = (plan.end_date - plan.start_date).days + 1
     dates = [plan.start_date + timedelta(days=t) for t in range(horizon_days)]
@@ -441,7 +453,9 @@ def get_plan_schedule(
                 "primary_department_name": dept_obj.name if dept_obj else "",
                 "primary_department_code": dept_obj.code if dept_obj else "",
                 "primary_department_color": dept_color,
+                "max_hours_week": emp.max_hours_week or 40.0,
                 "fixed_off_days": emp.fixed_off_days,
+                "eligibilities": elig_by_emp.get(emp.id, []),
                 "assignments": emp_assigns,
                 "previous_month_summary": prev_emp_summaries.get(emp.id)
             })

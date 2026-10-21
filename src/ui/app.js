@@ -81,6 +81,7 @@ async function initApp() {
   initOnboarding();
   initFindReplace();
   initKeyboardNavigation();
+  initButtonTooltips();
   setupEventListeners();
 
   // 2. Fetch data from backend
@@ -295,7 +296,7 @@ function renderStaffCentric(data) {
     }
 
     empTd.innerHTML = `
-      <div class="emp-sticky-card" style="border-left-color: ${deptColor};">
+      <div class="emp-sticky-card emp-clickable" style="border-left-color: ${deptColor};" title="Click to view & edit employee details">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
           <b>${r.employee_name}</b>
           <span class="dept-badge-tag" style="background:${deptColor};">${r.primary_department_code}</span>
@@ -303,9 +304,24 @@ function renderStaffCentric(data) {
         <div style="font-size:10px;color:var(--text-muted);display:flex;gap:6px;margin-top:2px;align-items:center;">
           <span>${r.employee_code}</span>
           ${prevMonthLabel}
+          <span style="margin-left:auto;font-size:10px;color:#3b82f6;" title="Edit employee">✏️</span>
         </div>
       </div>
     `;
+
+    empTd.addEventListener("click", (evt) => {
+      evt.stopPropagation();
+      openEmployeeEditor(r.employee_id);
+    });
+
+    empTd.addEventListener("mouseenter", () => {
+      showEmployeeHover(empTd, r);
+    });
+
+    empTd.addEventListener("mouseleave", () => {
+      hideEmployeeHover();
+    });
+
     tr.appendChild(empTd);
 
     // Trailing columns from previous month
@@ -689,6 +705,484 @@ function showCellHover(td, emp, dateStr, assignment) {
 function hideCellHover() {
   const popover = document.getElementById("cell-hover-popover");
   if (popover) popover.classList.add("hidden");
+}
+
+function showEmployeeHover(td, r) {
+  const popover = document.getElementById("emp-hover-popover");
+  if (!popover) return;
+
+  const nameEl = document.getElementById("emp-hover-name");
+  const badgeEl = document.getElementById("emp-hover-dept-badge");
+  const codeDeptEl = document.getElementById("emp-hover-code-dept");
+  const hoursEl = document.getElementById("emp-hover-hours");
+  const fixedOffEl = document.getElementById("emp-hover-fixed-off");
+  const workloadEl = document.getElementById("emp-hover-workload");
+  const timeoffEl = document.getElementById("emp-hover-timeoff");
+  const prevRow = document.getElementById("emp-hover-prev-row");
+  const prevStatsEl = document.getElementById("emp-hover-prev-stats");
+  const floatingEl = document.getElementById("emp-hover-floating");
+
+  if (nameEl) nameEl.textContent = r.employee_name || "Employee";
+  if (badgeEl) {
+    badgeEl.textContent = r.primary_department_code || "DEPT";
+    badgeEl.style.background = r.primary_department_color || "#3b82f6";
+  }
+  if (codeDeptEl) {
+    codeDeptEl.textContent = `${r.employee_code || ""} • ${r.primary_department_name || ""}`;
+  }
+
+  if (hoursEl) {
+    hoursEl.textContent = `${r.max_hours_week || 40.0}h / week (Max)`;
+  }
+
+  // Format regular fixed off days
+  if (fixedOffEl) {
+    const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    if (r.fixed_off_days) {
+      const parts = r.fixed_off_days
+        .split(",")
+        .map((x) => parseInt(x.trim(), 10))
+        .filter((n) => !isNaN(n));
+      if (parts.length > 0) {
+        fixedOffEl.textContent = parts
+          .map((d) => dayNames[d] || `Day ${d}`)
+          .join(", ");
+      } else {
+        fixedOffEl.textContent = "Flexible / Dynamic";
+      }
+    } else {
+      fixedOffEl.textContent = "Flexible / Dynamic";
+    }
+  }
+
+  // Calculate monthly stats from r.assignments
+  let shiftCount = 0;
+  let totalHours = 0;
+  let nightCount = 0;
+  let dayOffCount = 0;
+  let compOffCount = 0;
+  let leaveCount = 0;
+
+  if (r.assignments) {
+    Object.values(r.assignments).forEach((a) => {
+      if (!a) return;
+      if (a.is_comp_off || a.shift_code === "COFF") {
+        compOffCount++;
+      } else if (a.is_day_off || a.is_fixed_off || a.shift_code === "DO") {
+        dayOffCount++;
+      } else if (a.is_leave) {
+        leaveCount++;
+      } else if (a.shift_id) {
+        shiftCount++;
+        const sObj =
+          state.shifts && state.shifts.find((s) => s.id === a.shift_id);
+        if (sObj) {
+          totalHours += sObj.duration_hours || 8.0;
+          if (sObj.is_night_shift) nightCount++;
+        } else {
+          totalHours += 8.0;
+        }
+      }
+    });
+  }
+
+  if (workloadEl) {
+    const roundedH = Math.round(totalHours * 10) / 10;
+    workloadEl.textContent = `${shiftCount} shifts (${roundedH}h) • ${nightCount} Nights`;
+  }
+
+  if (timeoffEl) {
+    const offParts = [];
+    if (dayOffCount > 0) offParts.push(`${dayOffCount} DO`);
+    if (compOffCount > 0) offParts.push(`${compOffCount} Coff`);
+    if (leaveCount > 0) offParts.push(`${leaveCount} Leave`);
+    timeoffEl.textContent = offParts.length > 0 ? offParts.join(" • ") : "None";
+  }
+
+  // Previous month summary
+  if (prevRow && prevStatsEl) {
+    if (r.previous_month_summary) {
+      prevRow.classList.remove("hidden");
+      prevStatsEl.textContent = `${r.previous_month_summary.worked_hours || 0}h (${r.previous_month_summary.night_shifts || 0} Nights)`;
+    } else {
+      prevRow.classList.add("hidden");
+    }
+  }
+
+  // Floating eligibilities
+  if (floatingEl) {
+    if (r.eligibilities && r.eligibilities.length > 0) {
+      const floaters = r.eligibilities.filter(
+        (e) => e.can_float && e.department_id !== r.primary_department_id
+      );
+      if (floaters.length > 0) {
+        floatingEl.textContent = floaters
+          .map((f) => `${f.department_code} (Rank ${f.preference_rank})`)
+          .join(", ");
+      } else {
+        floatingEl.textContent = "Home Dept Only";
+      }
+    } else {
+      floatingEl.textContent = "Home Dept Only";
+    }
+  }
+
+  // Position popover relative to td
+  const rect = td.getBoundingClientRect();
+  const popoverWidth = 320;
+  const popoverHeight = 220;
+
+  let left = rect.right + 8;
+  let top = rect.top;
+
+  if (left + popoverWidth > window.innerWidth - 10) {
+    left = rect.left - popoverWidth - 8;
+  }
+  if (left < 10) left = 10;
+
+  if (top + popoverHeight > window.innerHeight - 10) {
+    top = window.innerHeight - popoverHeight - 10;
+  }
+  if (top < 10) top = 10;
+
+  popover.style.left = `${Math.round(left)}px`;
+  popover.style.top = `${Math.round(top)}px`;
+  popover.classList.remove("hidden");
+}
+
+function hideEmployeeHover() {
+  const popover = document.getElementById("emp-hover-popover");
+  if (popover) popover.classList.add("hidden");
+}
+
+async function openEmployeeEditor(empId) {
+  hideEmployeeHover();
+  hideCellHover();
+
+  const modal = document.getElementById("modal-manage-org");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+
+  // Switch to Staff Directory tab
+  document
+    .querySelectorAll(".org-tab-btn")
+    .forEach((b) => b.classList.remove("active"));
+  const empTab = document.getElementById("org-tab-emps");
+  if (empTab) empTab.classList.add("active");
+
+  const deptsView = document.getElementById("org-depts-view");
+  const demandView = document.getElementById("org-demand-view");
+  const empsView = document.getElementById("org-emps-view");
+  if (deptsView) deptsView.classList.add("hidden");
+  if (demandView) demandView.classList.add("hidden");
+  if (empsView) empsView.classList.remove("hidden");
+
+  await loadOrgDepartments();
+  await loadOrgEmployees();
+
+  // Find target employee
+  let emp = null;
+  try {
+    emp = await apiGet(`/api/employees/${empId}`);
+  } catch (_) {
+    const allEmps = await apiGet("/api/employees?active_only=false");
+    emp = allEmps.find((e) => e.id === empId);
+  }
+
+  if (emp) {
+    window.editEmployee(emp);
+    const formCard = document.getElementById("emp-form-card");
+    if (formCard) {
+      formCard.classList.remove("hidden");
+      formCard.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      formCard.style.outline = "2px solid #3b82f6";
+      formCard.style.borderRadius = "8px";
+      setTimeout(() => {
+        formCard.style.outline = "none";
+      }, 1600);
+    }
+  }
+}
+
+const BUTTON_EXPLANATIONS = {
+  "welcome-setup-btn": {
+    title: "🚀 Setup Wizard",
+    desc: "Opens the 3-step setup wizard to import existing spreadsheets, create departments from scratch, or load demo rosters.",
+  },
+  "help-guide-btn": {
+    title: "❓ Interactive Help Guide",
+    desc: "Comprehensive documentation, visual cheat sheets, solver tips, and keyboard shortcut references for managers.",
+  },
+  "new-plan-btn": {
+    title: "⚡ Generate CP-SAT Roster",
+    desc: "Executes Google OR-Tools mathematical optimization to generate a complete monthly schedule while balancing workloads and eliminating fatigue.",
+  },
+  "solve-remaining-btn": {
+    title: "🧩 Solve Remaining Slots",
+    desc: "Fills empty cells (—) with optimal shifts without modifying any pre-filled or manager-pinned shifts.",
+  },
+  "sidebar-solve-btn": {
+    title: "🧩 Solve Remaining Slots",
+    desc: "Fills empty cells (—) with optimal shifts without modifying any pre-filled or manager-pinned shifts.",
+  },
+  "prefill-toggle-btn": {
+    title: "✏️ Prefill Rapid Entry",
+    desc: "Click-to-paint mode: Click any cell to stamp the currently selected shift code or off-duty mark instantly.",
+  },
+  "sidebar-prefill-btn": {
+    title: "✏️ Prefill Rapid Entry",
+    desc: "Click-to-paint mode: Click any cell to stamp the currently selected shift code or off-duty mark instantly.",
+  },
+  "variants-btn": {
+    title: "⚖️ Compare Solver Variants",
+    desc: "Inspect 3 alternative mathematical schedule variants (Float-Averse, Balanced, Overtime-Averse) and promote the best one.",
+  },
+  "find-replace-btn": {
+    title: "🔍 Find & Replace Shifts",
+    desc: "Search for specific shift codes across the month and batch replace or visually highlight all matching cells.",
+  },
+  "clear-canvas-btn": {
+    title: "🗑️ Clear Canvas (Reset)",
+    desc: "Clears all shifts and resets all cells back to empty (—) so you can start fresh or rebuild from scratch.",
+  },
+  "toggle-prev-month-btn": {
+    title: "📅 Previous Month Context",
+    desc: "Toggles trailing 3 days and worked hours from the prior month to prevent turnaround violations on day 1.",
+  },
+  "mode-toggle-btn": {
+    title: "👁️ Simple / Advanced View",
+    desc: "Switches between a clean streamlined spreadsheet view and the full ergonomic constraint audit mode.",
+  },
+  "manage-org-btn": {
+    title: "🏢 Manage Organization",
+    desc: "Configure departments, department colors, active staff directory, weekly hours limits, and shift staffing demand.",
+  },
+  "vacations-mgr-btn": {
+    title: "🏖️ Vacations & Leaves",
+    desc: "Record employee annual leave, medical leave, and vacations. The solver will automatically lock those dates as off.",
+  },
+  "advanced-settings-btn": {
+    title: "⚙️ Advanced Solver Settings",
+    desc: "Customize shift codes (MORN, NIGHT, COFF, DO), switch between 2-shift and 3-shift systems, and set solver timeouts.",
+  },
+  "import-btn": {
+    title: "📥 Import Spreadsheets",
+    desc: "Bulk-upload employees, departments, and staffing requirements from Excel (.xlsx) or CSV files.",
+  },
+  "export-excel-btn": {
+    title: "📊 Export Styled Excel",
+    desc: "Downloads an executive Excel workbook (.xlsx) color-coded with shifts, department badges, and variance scorecards.",
+  },
+  "export-pdf-btn": {
+    title: "📄 Export Print-Ready PDF",
+    desc: "Generates high-resolution vector PDF schedules formatted for workplace bulletin boards and compliance records.",
+  },
+  "toggle-sidebar-btn": {
+    title: "📐 Toggle Department Filter",
+    desc: "Collapses or expands the left department navigation sidebar.",
+  },
+  "sidebar-left-collapse-btn": {
+    title: "◀ Collapse Left Sidebar",
+    desc: "Hides the department filter sidebar to give more horizontal room for the schedule grid.",
+  },
+  "sidebar-left-expand-btn": {
+    title: "▶ Expand Left Sidebar",
+    desc: "Opens the department filter sidebar to filter schedules by department.",
+  },
+  "toggle-inspector-btn": {
+    title: "📐 Toggle Shift Inspector",
+    desc: "Collapses or expands the right-hand cell inspector panel.",
+  },
+  "sidebar-right-collapse-btn": {
+    title: "▶ Collapse Inspector Panel",
+    desc: "Hides the right inspector panel to maximize table viewing width.",
+  },
+  "sidebar-right-expand-btn": {
+    title: "◀ Expand Inspector Panel",
+    desc: "Opens the inspector panel to view cell details, rest rules, and manual override controls.",
+  },
+  "reset-widths-btn": {
+    title: "↺ Reset Sidebar Widths",
+    desc: "Restores both left and right sidebars back to their standard default widths.",
+  },
+  "inspector-pin-btn": {
+    title: "📌 Pin / Lock Shift",
+    desc: "Locks this shift so that subsequent CP-SAT solver runs will preserve it exactly as chosen.",
+  },
+  "inspector-clear-btn": {
+    title: "⚪ Empty Cell (—)",
+    desc: "Clears assignment and sets cell to blank. The solver will consider this cell fillable.",
+  },
+  "inspector-dayoff-btn": {
+    title: "🔒 Lock Regular Day Off (📌 DO)",
+    desc: "Pins this date as a mandatory Day Off. The solver is strictly forbidden from scheduling shifts here.",
+  },
+  "inspector-compoff-btn": {
+    title: "☕ Lock Compensatory Off (📌 COFF)",
+    desc: "Pins this date as Compensatory Off. Rewards accumulated overtime with a guaranteed day off.",
+  },
+  "inspector-audit-btn": {
+    title: "🩺 Instant Ergonomic Audit",
+    desc: "Checks 14-hour rest gaps, consecutive working streaks, and weekly hours limits for this employee.",
+  },
+  "quick-view-staff": {
+    title: "👤 Staff-Centric View",
+    desc: "Horizontal timeline displaying each employee on rows and dates across columns.",
+  },
+  "quick-view-slot": {
+    title: "📋 Slot-Centric View",
+    desc: "Shows required staffing count vs assigned workers shift-by-shift to quickly spot deficits.",
+  },
+  "quick-view-audit": {
+    title: "📊 Workload Audit Scorecard",
+    desc: "Detailed compliance table showing total hours, overtime variance, night shifts, and rest violations.",
+  },
+  "zoom-out-btn": {
+    title: "🔍 Zoom Out Grid",
+    desc: "Scales down the timetable cells for a broader bird's-eye view of the entire month.",
+  },
+  "zoom-in-btn": {
+    title: "🔎 Zoom In Grid",
+    desc: "Enlarges cell fonts and dimensions for comfortable reading and detailed editing.",
+  },
+  "zoom-reset-btn": {
+    title: "🎯 Reset Zoom",
+    desc: "Restores grid zoom scale back to default 100%.",
+  },
+  "show-add-dept-btn": {
+    title: "➕ Create Department",
+    desc: "Add a new department with custom color coding and operating schedule.",
+  },
+  "show-add-emp-btn": {
+    title: "➕ Add New Employee",
+    desc: "Register an employee with department affiliation, weekly hour cap, and dedicated off days.",
+  },
+  "save-demand-btn": {
+    title: "💾 Save Staffing Demand",
+    desc: "Saves required minimum staff per shift type to ensure adequate coverage during solver runs.",
+  },
+  "preset-1-demand-btn": {
+    title: "1️⃣ Preset: 1 Staff / Shift",
+    desc: "Sets required staffing count to 1 worker for all active shifts across Monday through Sunday.",
+  },
+  "preset-2-demand-btn": {
+    title: "2️⃣ Preset: 2 Staff / Shift",
+    desc: "Sets required staffing count to 2 workers for all active shifts across Monday through Sunday.",
+  },
+  "bulk-edit-emps-btn": {
+    title: "📝 Bulk Edit Employees",
+    desc: "Batch update primary department, weekly max hours, or dedicated off days for all selected employees.",
+  },
+  "bulk-delete-emps-btn": {
+    title: "🗑️ Bulk Delete Employees",
+    desc: "Deactivates and removes all selected employees in a single operation.",
+  },
+  "vac-add-btn": {
+    title: "🏖️ Record Vacation / Leave",
+    desc: "Logs vacation or medical leave. The solver will automatically respect these approved off dates.",
+  },
+  "save-settings-btn": {
+    title: "💾 Save Advanced Settings",
+    desc: "Persists custom shift codes, shift mode configurations, and solver preferences.",
+  },
+  "fr-highlight-btn": {
+    title: "✨ Highlight Matches",
+    desc: "Applies high-visibility glow outline to all cells matching your search query.",
+  },
+  "fr-replace-btn": {
+    title: "🔁 Replace All Matches",
+    desc: "Batch replaces matching shifts across the entire schedule grid.",
+  },
+  "fr-clear-btn": {
+    title: "🧹 Clear Search Highlights",
+    desc: "Removes search result outlines from the schedule table.",
+  },
+};
+
+function showButtonTooltip(btn, info) {
+  const tip = document.getElementById("button-action-tooltip");
+  if (!tip || !info) return;
+
+  const titleEl = document.getElementById("btn-tip-title");
+  const descEl = document.getElementById("btn-tip-desc");
+
+  if (titleEl) titleEl.textContent = info.title;
+  if (descEl) descEl.textContent = info.desc;
+
+  const rect = btn.getBoundingClientRect();
+  const tipWidth = 280;
+  const tipHeight = 75;
+
+  let left = rect.left + rect.width / 2 - tipWidth / 2;
+  let top = rect.bottom + 8;
+
+  if (rect.bottom + tipHeight + 16 > window.innerHeight) {
+    top = rect.top - tipHeight - 8;
+  }
+
+  if (left + tipWidth > window.innerWidth - 12) {
+    left = window.innerWidth - tipWidth - 12;
+  }
+  if (left < 12) left = 12;
+
+  tip.style.left = `${Math.round(left)}px`;
+  tip.style.top = `${Math.round(top)}px`;
+  tip.classList.remove("hidden");
+}
+
+function hideButtonTooltip() {
+  const tip = document.getElementById("button-action-tooltip");
+  if (tip) tip.classList.add("hidden");
+}
+
+let buttonTooltipTimer = null;
+let activeTooltipBtn = null;
+
+function initButtonTooltips() {
+  document.addEventListener("mouseover", (e) => {
+    const btn = e.target.closest(
+      "button, .ribbon-tab, .status-icon-btn, .status-zoom-btn, .status-zoom-label"
+    );
+    if (!btn) return;
+    if (btn === activeTooltipBtn) return;
+    activeTooltipBtn = btn;
+
+    let info = null;
+    if (btn.id && BUTTON_EXPLANATIONS[btn.id]) {
+      info = BUTTON_EXPLANATIONS[btn.id];
+    } else if (btn.dataset.tooltip) {
+      info = {
+        title: btn.textContent.trim() || "Action",
+        desc: btn.dataset.tooltip,
+      };
+    } else if (
+      btn.title &&
+      btn.title.length > 5 &&
+      !btn.title.startsWith("Click to view")
+    ) {
+      info = { title: btn.textContent.trim() || "Action", desc: btn.title };
+    }
+
+    if (!info) return;
+
+    clearTimeout(buttonTooltipTimer);
+    buttonTooltipTimer = setTimeout(() => {
+      if (activeTooltipBtn === btn) {
+        showButtonTooltip(btn, info);
+      }
+    }, 180);
+  });
+
+  document.addEventListener("mouseout", (e) => {
+    const btn = e.target.closest(
+      "button, .ribbon-tab, .status-icon-btn, .status-zoom-btn, .status-zoom-label"
+    );
+    if (btn && btn === activeTooltipBtn) {
+      activeTooltipBtn = null;
+      clearTimeout(buttonTooltipTimer);
+      hideButtonTooltip();
+    }
+  });
 }
 
 async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, colIdx = null, td = null) {

@@ -63,6 +63,15 @@ def create_employee(emp_in: EmployeeCreate, db: Session = Depends(get_db)):
     resp.primary_department_name = dept.name
     return resp
 
+@router.get("/employees/{emp_id}", response_model=EmployeeResponse)
+def get_employee(emp_id: int, db: Session = Depends(get_db)):
+    emp = db.query(Employee).filter(Employee.id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found.")
+    resp = EmployeeResponse.model_validate(emp)
+    resp.primary_department_name = emp.primary_department.name if emp.primary_department else None
+    return resp
+
 @router.put("/employees/{emp_id}", response_model=EmployeeResponse)
 def update_employee(emp_id: int, emp_in: EmployeeUpdate, db: Session = Depends(get_db)):
     emp = db.query(Employee).filter(Employee.id == emp_id).first()
