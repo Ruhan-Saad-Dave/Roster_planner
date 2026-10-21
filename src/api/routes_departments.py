@@ -32,6 +32,21 @@ def create_department(dept_in: DepartmentCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Department code already exists.")
     dept = Department(**dept_in.model_dump())
     db.add(dept)
+    db.flush()
+
+    # Automatically initialize default staffing requirements (min 1 per shift on operating days)
+    shifts = db.query(ShiftType).filter(ShiftType.is_active == True).all()
+    for s in shifts:
+        for dow in range(7):
+            min_st = 0 if (dept.operating_regime == "WEEKDAYS_ONLY" and dow in [5, 6]) else 1
+            db.add(DepartmentRequirement(
+                department_id=dept.id,
+                shift_type_id=s.id,
+                day_of_week=dow,
+                min_staff=min_st,
+                optimal_staff=min_st
+            ))
+
     db.commit()
     db.refresh(dept)
     resp = DepartmentResponse.model_validate(dept)
@@ -130,7 +145,26 @@ def update_shift_type(shift_id: int, shift_in: ShiftTypeUpdate, db: Session = De
 
 @router.get("/departments/{dept_id}/requirements")
 def get_department_requirements(dept_id: int, db: Session = Depends(get_db)):
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
     reqs = db.query(DepartmentRequirement).filter(DepartmentRequirement.department_id == dept_id).all()
+    if not reqs:
+        shifts = db.query(ShiftType).filter(ShiftType.is_active == True).all()
+        for s in shifts:
+            for dow in range(7):
+                min_st = 0 if (dept.operating_regime == "WEEKDAYS_ONLY" and dow in [5, 6]) else 1
+                db.add(DepartmentRequirement(
+                    department_id=dept_id,
+                    shift_type_id=s.id,
+                    day_of_week=dow,
+                    min_staff=min_st,
+                    optimal_staff=min_st
+                ))
+        db.commit()
+        reqs = db.query(DepartmentRequirement).filter(DepartmentRequirement.department_id == dept_id).all()
+
     return [
         {
             "id": r.id,

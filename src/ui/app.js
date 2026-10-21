@@ -946,6 +946,71 @@ window.deleteDepartment = async function(id, name) {
   }
 };
 
+async function initOrgDemandView() {
+  const deptSelect = document.getElementById("demand-dept-select");
+  if (!deptSelect) return;
+
+  const depts = state.departments || await apiGet("/api/departments");
+  deptSelect.innerHTML = "";
+  depts.forEach(d => {
+    const opt = document.createElement("option");
+    opt.value = d.id;
+    opt.textContent = `${d.name} (${d.code}) - ${d.operating_regime}`;
+    deptSelect.appendChild(opt);
+  });
+
+  deptSelect.onchange = () => loadDepartmentDemand(parseInt(deptSelect.value));
+  if (depts.length > 0) {
+    await loadDepartmentDemand(depts[0].id);
+  }
+}
+
+async function loadDepartmentDemand(deptId) {
+  const tbody = document.getElementById("demand-table-body");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;padding:12px;color:var(--text-muted);">Loading shift requirements...</td></tr>`;
+
+  try {
+    const reqs = await apiGet(`/api/departments/${deptId}/requirements`);
+    state.shifts = state.shifts || await apiGet("/api/shift-types");
+
+    const reqMap = {};
+    reqs.forEach(r => {
+      reqMap[r.shift_type_id] = reqMap[r.shift_type_id] || {};
+      reqMap[r.shift_type_id][r.day_of_week] = r.min_staff;
+    });
+
+    tbody.innerHTML = "";
+    state.shifts.forEach(s => {
+      const tr = document.createElement("tr");
+      tr.dataset.shiftId = s.id;
+
+      let cells = `
+        <td style="text-align:left;font-weight:600;">
+          ${s.name} <span class="brand-badge" style="background:#e0e7ff;color:#3730a3;font-size:10px;">${s.code}</span>
+        </td>
+        <td style="font-size:11px;color:#64748b;">${s.start_time.slice(0,5)}–${s.end_time.slice(0,5)} (${s.duration_hours}h)</td>
+      `;
+
+      for (let dow = 0; dow < 7; dow++) {
+        const val = (reqMap[s.id] && reqMap[s.id][dow] !== undefined) ? reqMap[s.id][dow] : 1;
+        cells += `
+          <td style="text-align:center;padding:2px;">
+            <input type="number" min="0" max="50" step="1" class="text-input demand-num-input" 
+              data-shift-id="${s.id}" data-dow="${dow}" value="${val}"
+              style="width:44px;text-align:center;font-size:12px;font-weight:600;padding:3px;">
+          </td>
+        `;
+      }
+
+      tr.innerHTML = cells;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:#dc2626;">Failed to load demand requirements: ${err.message}</td></tr>`;
+  }
+}
+
 async function loadOrgEmployees() {
   const filterDeptId = document.getElementById("emp-filter-dept-select").value;
   let url = "/api/employees?active_only=false";
@@ -1537,28 +1602,72 @@ function setupEventListeners() {
     };
   }
 
-  // Org Tabs Switcher
+  // Org Tabs Switcher (Departments, Shift Staffing Demand, Staff Directory)
   const tabDepts = document.getElementById("org-tab-depts");
+  const tabDemand = document.getElementById("org-tab-demand");
   const tabEmps = document.getElementById("org-tab-emps");
-  if (tabDepts) {
-    tabDepts.onclick = () => {
-      tabDepts.classList.add("active");
-      if (tabEmps) tabEmps.classList.remove("active");
-      const dView = document.getElementById("org-depts-view");
-      const eView = document.getElementById("org-emps-view");
-      if (dView) dView.classList.remove("hidden");
-      if (eView) eView.classList.add("hidden");
+  const dView = document.getElementById("org-depts-view");
+  const dmView = document.getElementById("org-demand-view");
+  const eView = document.getElementById("org-emps-view");
+
+  function setOrgTab(activeTab) {
+    [tabDepts, tabDemand, tabEmps].forEach(t => {
+      if (t) t.classList.toggle("active", t === activeTab);
+    });
+    if (dView) dView.classList.toggle("hidden", activeTab !== tabDepts);
+    if (dmView) dmView.classList.toggle("hidden", activeTab !== tabDemand);
+    if (eView) eView.classList.toggle("hidden", activeTab !== tabEmps);
+    if (activeTab === tabDemand) {
+      initOrgDemandView();
+    }
+  }
+
+  if (tabDepts) tabDepts.onclick = () => setOrgTab(tabDepts);
+  if (tabDemand) tabDemand.onclick = () => setOrgTab(tabDemand);
+  if (tabEmps) tabEmps.onclick = () => setOrgTab(tabEmps);
+
+  // Demand requirements controller
+  const saveDemandBtn = document.getElementById("save-demand-btn");
+  if (saveDemandBtn) {
+    saveDemandBtn.onclick = async () => {
+      const deptSelect = document.getElementById("demand-dept-select");
+      if (!deptSelect || !deptSelect.value) return;
+      const deptId = parseInt(deptSelect.value);
+
+      const inputs = document.querySelectorAll(".demand-num-input");
+      const requirements = [];
+      inputs.forEach(inp => {
+        const sId = parseInt(inp.dataset.shiftId);
+        const dow = parseInt(inp.dataset.dow);
+        const val = parseInt(inp.value) || 0;
+        requirements.push({
+          shift_type_id: sId,
+          day_of_week: dow,
+          min_staff: val,
+          optimal_staff: val
+        });
+      });
+
+      try {
+        await apiPut(`/api/departments/${deptId}/requirements`, { requirements });
+        alert("Staffing demand requirements saved successfully!");
+      } catch (err) {
+        alert("Failed to save demand requirements: " + err.message);
+      }
     };
   }
 
-  if (tabEmps) {
-    tabEmps.onclick = () => {
-      tabEmps.classList.add("active");
-      if (tabDepts) tabDepts.classList.remove("active");
-      const dView = document.getElementById("org-depts-view");
-      const eView = document.getElementById("org-emps-view");
-      if (eView) eView.classList.remove("hidden");
-      if (dView) dView.classList.add("hidden");
+  const preset1Btn = document.getElementById("demand-preset-1-btn");
+  if (preset1Btn) {
+    preset1Btn.onclick = () => {
+      document.querySelectorAll(".demand-num-input").forEach(inp => inp.value = 1);
+    };
+  }
+
+  const preset2Btn = document.getElementById("demand-preset-2-btn");
+  if (preset2Btn) {
+    preset2Btn.onclick = () => {
+      document.querySelectorAll(".demand-num-input").forEach(inp => inp.value = 2);
     };
   }
 

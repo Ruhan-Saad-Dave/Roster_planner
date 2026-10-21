@@ -128,12 +128,26 @@ def test_crawler_executes_all_button_backend_endpoints(client, sample_scenario):
     assert pdf_res.status_code == 200
 
     # 7. Pin / Lock Shift (inspector-pin-btn)
-    pin_res = client.post(f"/api/roster/{plan_id}/assignments/toggle-pin?employee_id=1&date=2026-11-01", json={})
+    # Find an assigned slot dynamically from the generated roster
+    target_emp_id = None
+    target_date = None
+    for row in sc_res.json().get("rows", []):
+        for d_str, cell in row.get("assignments", {}).items():
+            if cell.get("shift_id") is not None:
+                target_emp_id = row["employee_id"]
+                target_date = d_str
+                break
+        if target_emp_id:
+            break
+
+    assert target_emp_id is not None, "At least one assignment should exist in generated roster"
+
+    pin_res = client.post(f"/api/roster/{plan_id}/assignments/toggle-pin?employee_id={target_emp_id}&date={target_date}", json={})
     assert pin_res.status_code == 200
     assert "is_pinned" in pin_res.json()
 
     # 8. Set as Day OFF / Clear (inspector-clear-btn)
-    clear_res = client.delete(f"/api/roster/{plan_id}/assignments?employee_id=1&date=2026-11-01")
+    clear_res = client.delete(f"/api/roster/{plan_id}/assignments?employee_id={target_emp_id}&date={target_date}")
     assert clear_res.status_code == 200
     assert clear_res.json()["cleared"] is True
 

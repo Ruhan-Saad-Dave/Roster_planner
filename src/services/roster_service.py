@@ -36,6 +36,7 @@ def build_context_from_db(
 
     demand_matrix = {}
     for d in departments:
+        dept_has_reqs = any(dept_id == d.id for (dept_id, s_id, dow) in req_map.keys())
         for s in shifts:
             for t in range(horizon_days):
                 cur_date = start_date + timedelta(days=t)
@@ -45,7 +46,12 @@ def build_context_from_db(
                 if d.operating_regime == "WEEKDAYS_ONLY" and dow in [5, 6]:
                     demand_matrix[(d.id, s.id, t)] = 0
                 else:
-                    demand_matrix[(d.id, s.id, t)] = req_map.get((d.id, s.id, dow), 0)
+                    if dept_has_reqs:
+                        demand_matrix[(d.id, s.id, t)] = req_map.get((d.id, s.id, dow), 0)
+                    else:
+                        # Auto-default for newly created / unconfigured departments:
+                        # Minimum 1 staff per shift so active workforce gets scheduled!
+                        demand_matrix[(d.id, s.id, t)] = 1
 
     # 2. Eligibilities
     eligs = db.query(EmployeeDepartmentEligibility).all()

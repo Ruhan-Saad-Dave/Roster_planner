@@ -329,6 +329,7 @@
       </div>
       <div class="modal-tabs">
         <button id="org-tab-depts" class="org-tab-btn active">Departments (<span id="org-dept-count">0</span>)</button>
+        <button id="org-tab-demand" class="org-tab-btn">Shift Staffing Demand 📋</button>
         <button id="org-tab-emps" class="org-tab-btn">Staff Directory (<span id="org-emp-count">0</span>)</button>
       </div>
       <div class="modal-body" style="padding: 14px;">
@@ -484,6 +485,46 @@
               </thead>
               <tbody id="emps-table-body">
                 <!-- Dynamically rendered -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- TAB 3: Shift Staffing Demand -->
+        <div id="org-demand-view" class="hidden">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <span style="font-weight: 600; font-size: 13px;">Target Department:</span>
+              <select id="demand-dept-select" class="select-input" style="font-weight: 600; min-width: 180px;">
+                <!-- Populated dynamically -->
+              </select>
+            </div>
+            <div style="display: flex; gap: 6px;">
+              <button id="demand-preset-1-btn" class="btn btn-sm">Set 1 / Shift</button>
+              <button id="demand-preset-2-btn" class="btn btn-sm">Set 2 / Shift</button>
+              <button id="save-demand-btn" class="btn btn-sm btn-primary">Save Demand Requirements</button>
+            </div>
+          </div>
+          <p style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 10px;">
+            Specify the minimum number of staff needed for each shift on each day of the week. The CP-SAT solver uses these numbers to schedule workers to shifts.
+          </p>
+          <div style="max-height: 380px; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+            <table class="data-table" id="demand-table">
+              <thead>
+                <tr>
+                  <th style="text-align: left; min-width: 140px;">Shift</th>
+                  <th>Hours</th>
+                  <th style="width: 50px;">Mon</th>
+                  <th style="width: 50px;">Tue</th>
+                  <th style="width: 50px;">Wed</th>
+                  <th style="width: 50px;">Thu</th>
+                  <th style="width: 50px;">Fri</th>
+                  <th style="width: 50px;">Sat</th>
+                  <th style="width: 50px;">Sun</th>
+                </tr>
+              </thead>
+              <tbody id="demand-table-body">
+                <!-- Rendered dynamically -->
               </tbody>
             </table>
           </div>

@@ -35,6 +35,7 @@ class SchedulingContext:
         self.pinned_offs = pinned_offs
         self.max_consecutive_days = max_consecutive_days
         self.min_rest_days_per_week = min_rest_days_per_week
+        self.emp_map = {e.id: e for e in self.employees}
 
         # Default multi-tier hierarchical weights
         default_weights = {
@@ -56,12 +57,19 @@ class SchedulingContext:
                     self.forbidden_transitions.add((s1.id, s2.id))
 
     def is_eligible(self, emp_id: int, dept_id: int) -> bool:
+        # Home department is always eligible
+        emp = self.emp_map.get(emp_id)
+        if emp and emp.primary_department_id == dept_id:
+            return True
         if (emp_id, dept_id) in self.eligibilities:
-            _, can_float = self.eligibilities[(emp_id, dept_id)]
-            return can_float
+            rank, can_float = self.eligibilities[(emp_id, dept_id)]
+            return rank == 1 or can_float
         return False
 
     def get_rank(self, emp_id: int, dept_id: int) -> int:
+        emp = self.emp_map.get(emp_id)
+        if emp and emp.primary_department_id == dept_id:
+            return 1
         if (emp_id, dept_id) in self.eligibilities:
             rank, _ = self.eligibilities[(emp_id, dept_id)]
             return rank
