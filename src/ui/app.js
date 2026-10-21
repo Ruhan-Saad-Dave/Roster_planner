@@ -138,12 +138,26 @@ async function loadSchedule() {
       renderSlotCentric(data);
     }
 
+    // Check for labor conflicts in rendered schedule
+    let conflictCount = 0;
+    if (data && data.rows) {
+      data.rows.forEach(r => {
+        Object.values(r.assignments || {}).forEach(a => {
+          if (a && a.has_conflict) conflictCount++;
+        });
+      });
+    }
+
     // Update Health Banner
     const deficits = await apiGet(`/api/roster/${state.activePlanId}/deficits`);
-    if (deficits.length === 0) {
+    if (deficits.length === 0 && conflictCount === 0) {
       updateHealthBanner("green", "🟢 ROSTER HEALTH: ALL CLEAR — 100% shifts staffed. Zero ergonomic violations.");
+    } else if (deficits.length > 0 && conflictCount > 0) {
+      updateHealthBanner("red", `🔴 ROSTER HEALTH: ${deficits.length} Shortages & ⚠️ ${conflictCount} Labor Conflicts Detected.`, deficits, conflictCount);
+    } else if (deficits.length > 0) {
+      updateHealthBanner("red", `🔴 ROSTER HEALTH: ${deficits.length} Shortages Detected. Click to inspect recommendations.`, deficits, 0);
     } else {
-      updateHealthBanner("red", `🔴 ROSTER HEALTH: ${deficits.length} Shortages Detected. Click to inspect recommendations.`, deficits);
+      updateHealthBanner("yellow", `⚠️ ROSTER HEALTH: ${conflictCount} Labor Ergonomic Conflicts Detected. Click Auto-Resolve to fix.`, [], conflictCount);
     }
   }
 
@@ -164,7 +178,7 @@ async function loadSchedule() {
 // ==========================================
 // Health Banner & Guided Shortage Fixes
 // ==========================================
-function updateHealthBanner(type, message, deficits = []) {
+function updateHealthBanner(type, message, deficits = [], conflictCount = 0) {
   const banner = document.getElementById("health-banner");
   if (banner) {
     banner.className = `health-banner ${type}`;
@@ -194,9 +208,10 @@ function updateHealthBanner(type, message, deficits = []) {
       statusPill.style.cursor = "default";
       statusPill.onclick = null;
     } else if (type === "yellow") {
-      statusPill.textContent = "🟡 Advisory";
+      statusPill.textContent = `⚠️ Conflicts (${conflictCount})`;
       statusPill.style.color = "#854d0e";
-      statusPill.style.cursor = "default";
+      statusPill.style.cursor = "pointer";
+      statusPill.title = "Labor rule conflicts detected";
       statusPill.onclick = null;
     } else {
       statusPill.textContent = `🔴 Shortages (${deficits.length})`;
@@ -209,6 +224,25 @@ function updateHealthBanner(type, message, deficits = []) {
 
   const actionsContainer = document.getElementById("health-actions");
   actionsContainer.innerHTML = "";
+
+  if (conflictCount > 0) {
+    const resolveConflictsBtn = document.createElement("button");
+    resolveConflictsBtn.className = "btn btn-sm";
+    resolveConflictsBtn.style.cssText = "background:#d97706;color:#ffffff;font-weight:700;border:none;margin-right:8px;box-shadow:0 1px 3px rgba(0,0,0,0.15);";
+    resolveConflictsBtn.textContent = `⚡ Auto-Resolve Conflicts (${conflictCount})`;
+    resolveConflictsBtn.title = "Automatically resolve all labor rest and streak conflicts";
+    resolveConflictsBtn.onclick = async (e) => {
+      e.stopPropagation();
+      try {
+        const res = await apiPost(`/api/roster/${state.activePlanId}/resolve-conflicts`);
+        alert(`Success: ${res.message}`);
+        await loadSchedule();
+      } catch (err) {
+        alert("Failed to auto-resolve conflicts: " + err.message);
+      }
+    };
+    actionsContainer.appendChild(resolveConflictsBtn);
+  }
 
   if (deficits.length > 0) {
     // 1-Click Auto-Resolve All Button
@@ -2471,6 +2505,54 @@ function setupEventListeners() {
     };
   }
 
+  const regime3sBtn = document.getElementById("demand-regime-3s-btn");
+  if (regime3sBtn) {
+    regime3sBtn.onclick = async () => {
+      const deptSelect = document.getElementById("demand-dept-select");
+      if (!deptSelect || !deptSelect.value) return;
+      const deptId = parseInt(deptSelect.value);
+      try {
+        await apiPost(`/api/departments/${deptId}/apply-shift-regime?regime=3_shifts`);
+        await loadDepartmentDemandMatrix(deptId);
+        alert("Applied Standard 3-Shift Regime (Morning, Evening, Night) to department.");
+      } catch (err) {
+        alert("Failed to apply regime: " + err.message);
+      }
+    };
+  }
+
+  const regimeHybridBtn = document.getElementById("demand-regime-hybrid-btn");
+  if (regimeHybridBtn) {
+    regimeHybridBtn.onclick = async () => {
+      const deptSelect = document.getElementById("demand-dept-select");
+      if (!deptSelect || !deptSelect.value) return;
+      const deptId = parseInt(deptSelect.value);
+      try {
+        await apiPost(`/api/departments/${deptId}/apply-shift-regime?regime=hybrid_weekday3_weekend2`);
+        await loadDepartmentDemandMatrix(deptId);
+        alert("Applied Dynamic Hybrid Regime (3 Shifts Weekdays / 2 Shifts Weekends) to department.");
+      } catch (err) {
+        alert("Failed to apply regime: " + err.message);
+      }
+    };
+  }
+
+  const regime2sBtn = document.getElementById("demand-regime-2s-btn");
+  if (regime2sBtn) {
+    regime2sBtn.onclick = async () => {
+      const deptSelect = document.getElementById("demand-dept-select");
+      if (!deptSelect || !deptSelect.value) return;
+      const deptId = parseInt(deptSelect.value);
+      try {
+        await apiPost(`/api/departments/${deptId}/apply-shift-regime?regime=2_shifts`);
+        await loadDepartmentDemandMatrix(deptId);
+        alert("Applied Lean 2-Shift Regime (Morning & Night only) to department.");
+      } catch (err) {
+        alert("Failed to apply regime: " + err.message);
+      }
+    };
+  }
+
   // Color input hex live update
   const deptColorIn = document.getElementById("dept-form-color");
   if (deptColorIn) {
@@ -2968,6 +3050,10 @@ function setupEventListeners() {
       const defMode = defModeRadio ? defModeRadio.value : "blank";
       const remMode = document.getElementById("setting-remember-mode").checked;
 
+      const maxCoff = document.getElementById("setting-max-comp-offs") ? document.getElementById("setting-max-comp-offs").value : "2";
+      const contCoff = document.getElementById("setting-continuous-comp-off") ? document.getElementById("setting-continuous-comp-off").checked : true;
+      const dynRegime = document.getElementById("setting-dynamic-shift-regime") ? document.getElementById("setting-dynamic-shift-regime").value : "auto";
+
       const customCodes = {
         "OFF": offCode,
         "COFF": coffCode,
@@ -2980,6 +3066,9 @@ function setupEventListeners() {
           settings: {
             "generator_default_mode": defMode,
             "remember_generator_mode": remMode ? "true" : "false",
+            "max_comp_offs_per_employee": String(maxCoff),
+            "continuous_comp_off_enabled": contCoff ? "true" : "false",
+            "dynamic_shift_regime": dynRegime,
             "custom_status_codes": JSON.stringify(customCodes)
           }
         });
@@ -3362,6 +3451,15 @@ async function loadAdvancedSettings() {
 
     const remCb = document.getElementById("setting-remember-mode");
     if (remCb) remCb.checked = settings.remember_generator_mode;
+
+    const maxCoffInput = document.getElementById("setting-max-comp-offs");
+    if (maxCoffInput) maxCoffInput.value = settings.max_comp_offs_per_employee !== undefined ? settings.max_comp_offs_per_employee : 2;
+
+    const contCoffCb = document.getElementById("setting-continuous-comp-off");
+    if (contCoffCb) contCoffCb.checked = settings.continuous_comp_off_enabled !== false;
+
+    const regimeSelect = document.getElementById("setting-dynamic-shift-regime");
+    if (regimeSelect && settings.dynamic_shift_regime) regimeSelect.value = settings.dynamic_shift_regime;
 
     // Render shift types list
     const shiftsList = document.getElementById("settings-shifts-list");

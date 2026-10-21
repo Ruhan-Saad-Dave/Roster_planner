@@ -195,5 +195,68 @@ def update_department_requirements(dept_id: int, req_in: UpdateRequirementsReque
             optimal_staff=item.optimal_staff
         )
         db.add(req)
+@router.post("/departments/{dept_id}/apply-shift-regime")
+def apply_shift_regime(dept_id: int, regime: str = "hybrid_weekday3_weekend2", db: Session = Depends(get_db)):
+    """Dynamically configure department staffing requirements for 3 shifts, 2 shifts, or weekday3/weekend2 hybrid."""
+    dept = db.query(Department).filter(Department.id == dept_id).first()
+    if not dept:
+        raise HTTPException(status_code=404, detail="Department not found.")
+
+    shifts = db.query(ShiftType).filter(ShiftType.is_active == True).order_by(ShiftType.start_time).all()
+    if not shifts:
+        raise HTTPException(status_code=400, detail="No active shift types found.")
+
+    # Classify shifts
+    night_shifts = [s for s in shifts if s.is_night_shift]
+    day_shifts = [s for s in shifts if not s.is_night_shift]
+
+    morn_shift = day_shifts[0] if len(day_shifts) > 0 else shifts[0]
+    eve_shift = day_shifts[1] if len(day_shifts) > 1 else None
+    night_shift = night_shifts[0] if len(night_shifts) > 0 else (shifts[-1] if shifts[-1] != morn_shift else None)
+
+    # Delete existing requirements
+    db.query(DepartmentRequirement).filter(DepartmentRequirement.department_id == dept_id).delete()
+
+    for dow in range(7):
+        is_weekend = dow in [5, 6]
+        for s in shifts:
+            min_st = 0
+            if dept.operating_regime == "WEEKDAYS_ONLY" and is_weekend:
+                min_st = 0
+            elif regime == "3_shifts":
+                min_st = 1
+            elif regime == "2_shifts":
+                # In 2-shift regime: Morning and Night are active, Evening is collapsed (0)
+                if s == morn_shift or s == night_shift:
+                    min_st = 1
+                else:
+                    min_st = 0
+            elif regime == "hybrid_weekday3_weekend2":
+                if not is_weekend:
+                    min_st = 1  # 3 shifts on weekdays
+                else:
+                    # 2 shifts on weekend (collapse Evening)
+                    if s == morn_shift or s == night_shift:
+                        min_st = 1
+                    else:
+                        min_st = 0
+            else:
+                min_st = 1
+
+            db.add(DepartmentRequirement(
+                department_id=dept_id,
+                shift_type_id=s.id,
+                day_of_week=dow,
+                min_staff=min_st,
+                optimal_staff=min_st
+            ))
+
     db.commit()
-    return {"message": "Requirements updated successfully."}
+    reqs = db.query(DepartmentRequirement).filter(DepartmentRequirement.department_id == dept_id).all()
+    return {
+        "message": f"Successfully applied '{regime}' shift allocation regime to {dept.name}.",
+        "department_id": dept_id,
+        "regime": regime,
+        "requirements_count": len(reqs)
+    }
+

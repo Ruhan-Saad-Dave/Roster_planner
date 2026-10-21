@@ -788,8 +788,8 @@ body {
 .shift-night { background: var(--shift-night-bg); color: var(--shift-night-text); }
 .shift-off { background: var(--shift-off-bg); color: var(--shift-off-text); font-weight: 400; }
 .shift-vac { background: #f3e8ff !important; color: #6b21a8 !important; border: 1px solid #d8b4fe !important; font-weight: 600; }
-.shift-do { background: #f1f5f9 !important; color: #475569 !important; border: 1px solid #cbd5e1 !important; font-weight: 500; }
-.shift-coff { background: #fef3c7 !important; color: #92400e !important; border: 1px solid #fde68a !important; font-weight: 600; }
+.shift-do { background: #f1f5f9 !important; color: #334155 !important; border: 1px solid #cbd5e1 !important; font-weight: 600 !important; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,0.03); }
+.shift-coff { background: #fef3c7 !important; color: #92400e !important; border: 1px solid #f59e0b !important; font-weight: 700 !important; border-radius: 4px; box-shadow: 0 1px 2px rgba(245,158,11,0.15); }
 
 .bulk-actions-bar {
   display: flex;

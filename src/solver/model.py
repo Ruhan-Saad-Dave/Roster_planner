@@ -42,7 +42,7 @@ class SchedulingContext:
             "deficit": 1_000_000,
             "float_rank2": 1_000,
             "float_rank3": 5_000,
-            "dedicated_shift": 2_500,
+            "dedicated_shift": 3_500,
             "shift_stability": 50,
             "fairness": 50,
             "preferences": 10
@@ -250,7 +250,7 @@ class RosterModelBuilder:
             obj_terms.append(f3_var * w_f3)
 
         # Tier 3.5: Dedicated Shift Preference (Worker sticks to their dedicated shift unless shortage coverage)
-        w_ded_shift = self.ctx.weights.get("dedicated_shift", 300)
+        w_ded_shift = self.ctx.weights.get("dedicated_shift", 3500)
         for e in self.ctx.employees:
             if getattr(e, "preferred_shift_type_id", None):
                 pref_id = e.preferred_shift_type_id
@@ -281,12 +281,16 @@ class RosterModelBuilder:
             if pref_score != 0:
                 obj_terms.append(x_var * (-w_pref * pref_score))
 
-        # Tier 5: Fairness on Night Shifts
+        # Tier 5: Fairness on Night Shifts (Only among flexible employees without dedicated day/evening shifts)
         w_fair = self.ctx.weights["fairness"]
         night_shift_ids = [s.id for s in self.ctx.shifts if s.is_night_shift]
         if night_shift_ids and len(self.ctx.employees) > 1:
             total_night_vars = {}
             for e in self.ctx.employees:
+                # If employee has a dedicated shift that is NOT night, exempt them from night quota fairness
+                pref_shift = getattr(e, "preferred_shift_type_id", None)
+                if pref_shift and pref_shift not in night_shift_ids:
+                    continue
                 n_vars = [
                     self.V[e.id, s_id, t]
                     for s_id in night_shift_ids
@@ -295,12 +299,13 @@ class RosterModelBuilder:
                 total_night_vars[e.id] = self.model.NewIntVar(0, self.ctx.horizon_days, f"NightTotal_{e.id}")
                 self.model.Add(total_night_vars[e.id] == sum(n_vars))
 
-            # Approximate variance minimization via bounding max and min night shifts
-            max_nights = self.model.NewIntVar(0, self.ctx.horizon_days, "MaxNights")
-            min_nights = self.model.NewIntVar(0, self.ctx.horizon_days, "MinNights")
-            for e_id, n_var in total_night_vars.items():
-                self.model.Add(max_nights >= n_var)
-                self.model.Add(min_nights <= n_var)
-            obj_terms.append((max_nights - min_nights) * w_fair)
+            if len(total_night_vars) > 1:
+                # Approximate variance minimization via bounding max and min night shifts
+                max_nights = self.model.NewIntVar(0, self.ctx.horizon_days, "MaxNights")
+                min_nights = self.model.NewIntVar(0, self.ctx.horizon_days, "MinNights")
+                for e_id, n_var in total_night_vars.items():
+                    self.model.Add(max_nights >= n_var)
+                    self.model.Add(min_nights <= n_var)
+                obj_terms.append((max_nights - min_nights) * w_fair)
 
         self.model.Minimize(sum(obj_terms))

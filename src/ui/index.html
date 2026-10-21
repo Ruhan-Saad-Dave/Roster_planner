@@ -566,9 +566,11 @@
                 <!-- Populated dynamically -->
               </select>
             </div>
-            <div style="display: flex; gap: 6px;">
+            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+              <button id="demand-regime-3s-btn" class="btn btn-sm" title="Standard 3 shifts (Morning, Evening, Night) every day">Standard 3 Shifts</button>
+              <button id="demand-regime-hybrid-btn" class="btn btn-sm" style="background:#fef3c7;border-color:#f59e0b;color:#92400e;font-weight:600;" title="3 shifts on Weekdays, 2 shifts on Weekends to handle lower staffing">⚡ Dynamic 3Wk/2Wknd</button>
+              <button id="demand-regime-2s-btn" class="btn btn-sm" style="background:#e0f2fe;border-color:#38bdf8;color:#0369a1;" title="Lean operations: Morning and Night shifts only (collapse evening)">🌙 Lean 2 Shifts</button>
               <button id="demand-preset-1-btn" class="btn btn-sm">Set 1 / Shift</button>
-              <button id="demand-preset-2-btn" class="btn btn-sm">Set 2 / Shift</button>
               <button id="save-demand-btn" class="btn btn-sm btn-primary">Save Demand Requirements</button>
             </div>
           </div>
@@ -1053,6 +1055,33 @@
           <div id="settings-shifts-list" style="display: flex; flex-direction: column; gap: 6px;">
             <!-- Dynamically populated -->
           </div>
+        </div>
+
+        <!-- Section 2.5: Compensatory Off (COFF) & Dynamic Shift Rules -->
+        <div class="crud-form-card">
+          <h4 style="margin-bottom: 6px; font-size: 13px;">Compensatory Off (COFF) & Dynamic Shift Allocation</h4>
+          <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;">
+            Configure policies for overtime comp offs and flexible 2-shift vs 3-shift scheduling:
+          </p>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 8px;">
+            <label>
+              <span class="form-label">Max Comp Offs Per Employee / Month:</span>
+              <input type="number" id="setting-max-comp-offs" class="text-input" min="0" max="10" step="1" value="2" style="width: 100%;">
+            </label>
+            <label>
+              <span class="form-label">Dynamic Shift Regime Preset:</span>
+              <select id="setting-dynamic-shift-regime" class="select-input" style="width: 100%;">
+                <option value="auto">Auto (Configured per Department)</option>
+                <option value="3_shifts">Standard 3 Shifts (24/7)</option>
+                <option value="hybrid_weekday3_weekend2">Hybrid (3 Weekdays / 2 Weekends)</option>
+                <option value="2_shifts">Lean Operations (2 Shifts - MORN & NIGHT)</option>
+              </select>
+            </label>
+          </div>
+          <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; cursor: pointer;">
+            <input type="checkbox" id="setting-continuous-comp-off" checked>
+            <span><b>Continuous Comp Off:</b> Place earned compensatory days contiguous with regular days off to form unified rest periods.</span>
+          </label>
         </div>
 
         <!-- Section 3: Solver & Generator Defaults -->

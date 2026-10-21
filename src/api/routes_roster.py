@@ -5,7 +5,7 @@ from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from src.db.session import get_db
-from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Department, ShiftType, Employee, LeaveRecord, EmployeeDepartmentEligibility
+from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Department, ShiftType, Employee, LeaveRecord, EmployeeDepartmentEligibility, SystemSetting
 from src.api.schemas import (
     GenerateRosterRequest, ValidateAssignmentRequest,
     ManualAssignmentRequest, PrefillShiftsRequest, FindReplaceRequest,
@@ -332,6 +332,11 @@ def get_plan_schedule(
                 emp_weekly_hours[wk_key] = emp_weekly_hours.get(wk_key, 0.0) + dur
                 emp_weekly_shifts[wk_key] = emp_weekly_shifts.get(wk_key, 0) + 1
 
+        # Load system settings for comp off rules
+        system_settings = {s.key: s.value for s in db.query(SystemSetting).all()}
+        max_comp_offs = int(system_settings.get("max_comp_offs_per_employee", 2))
+        continuous_comp_off = system_settings.get("continuous_comp_off_enabled", "true").lower() in ["true", "1", "yes"]
+
         for emp in employees:
             if department_id and emp.primary_department_id != department_id:
                 continue
@@ -346,6 +351,8 @@ def get_plan_schedule(
             emp_assigns = {}
             consecutive_work_days = 0
             prev_shift = None
+            last_worked_date = None
+            coff_awarded_count = 0
 
             for d in dates:
                 if (emp.id, d) in assign_by_emp_date:
@@ -362,10 +369,13 @@ def get_plan_schedule(
                         has_conflict = True
                         conflict_reason = f"Violation: Assigned to work on employee's dedicated regular day off ({d.strftime('%A')})"
 
-                    # Turnaround check: Previous night shift followed by non-night or morning
-                    if prev_shift and prev_shift.is_night_shift and s and not s.is_night_shift:
-                        has_conflict = True
-                        conflict_reason = "Mandatory 14h rest interval after Night Shift violated"
+                    # Turnaround check: Rest interval after previous calendar day's shift
+                    if last_worked_date == d - timedelta(days=1) and prev_shift and s:
+                        from src.solver.rules import calculate_inter_shift_rest_hours
+                        rest_hrs = calculate_inter_shift_rest_hours(prev_shift, s)
+                        if rest_hrs < prev_shift.min_rest_hours_after:
+                            has_conflict = True
+                            conflict_reason = f"Mandatory {prev_shift.min_rest_hours_after}h rest interval after {prev_shift.name} violated ({round(rest_hrs, 1)}h rest)"
 
                     # Consecutive days check
                     if consecutive_work_days > 5:
@@ -390,10 +400,12 @@ def get_plan_schedule(
                         "is_fixed_off": False
                     }
                     prev_shift = s
+                    last_worked_date = d
 
                 elif (emp.id, d) in leave_by_emp_date:
                     consecutive_work_days = 0
                     prev_shift = None
+                    last_worked_date = None
                     l = leave_by_emp_date[(emp.id, d)]
                     ltype = (l.leave_type or "").upper()
                     lnotes = (l.notes or "").upper()
@@ -436,6 +448,7 @@ def get_plan_schedule(
                 elif d.weekday() in emp_fixed_days:
                     consecutive_work_days = 0
                     prev_shift = None
+                    last_worked_date = None
                     emp_assigns[d.isoformat()] = {
                         "assignment_id": None,
                         "shift_id": None,
@@ -451,11 +464,14 @@ def get_plan_schedule(
                         "has_conflict": False,
                         "conflict_reason": None,
                         "is_leave": False,
+                        "is_day_off": True,
+                        "is_comp_off": False,
                         "is_fixed_off": True
                     }
                 else:
                     consecutive_work_days = 0
                     prev_shift = None
+                    last_worked_date = None
 
                     w_key = (emp.id, d.isocalendar()[:2])
                     w_hours = emp_weekly_hours.get(w_key, 0.0)
@@ -464,29 +480,55 @@ def get_plan_schedule(
                     is_solved_plan = plan.status in ["SOLVED", "PUBLISHED"]
 
                     if is_solved_plan and (w_hours >= contract_hours or w_shifts >= 5):
-                        # Earned Compensatory Off due to overtime / contract hours fulfilled!
-                        emp_assigns[d.isoformat()] = {
-                            "assignment_id": None,
-                            "shift_id": None,
-                            "shift_code": "COFF",
-                            "shift_name": f"Earned Comp Off (Overtime Holiday: {round(w_hours, 1)}h worked)",
-                            "department_id": None,
-                            "department_code": "",
-                            "department_color": "#D97706",
-                            "is_floating": False,
-                            "float_rank": 1,
-                            "is_pinned": False,
-                            "is_manual_override": False,
-                            "has_conflict": False,
-                            "conflict_reason": None,
-                            "is_leave": False,
-                            "is_day_off": False,
-                            "is_comp_off": True,
-                            "is_earned_coff": True,
-                            "earned_hours": round(w_hours, 1),
-                            "leave_type": "COFF",
-                            "is_fixed_off": False
-                        }
+                        # Contract fulfilled for the week!
+                        is_overtime_worker = (w_shifts > 5 or w_hours > contract_hours + 0.1)
+                        if is_overtime_worker and coff_awarded_count < max_comp_offs:
+                            coff_awarded_count += 1
+                            emp_assigns[d.isoformat()] = {
+                                "assignment_id": None,
+                                "shift_id": None,
+                                "shift_code": "COFF",
+                                "shift_name": f"Earned Comp Off (Overtime Rest: {round(w_hours, 1)}h worked)",
+                                "department_id": None,
+                                "department_code": "",
+                                "department_color": "#D97706",
+                                "is_floating": False,
+                                "float_rank": 1,
+                                "is_pinned": False,
+                                "is_manual_override": False,
+                                "has_conflict": False,
+                                "conflict_reason": None,
+                                "is_leave": False,
+                                "is_day_off": False,
+                                "is_comp_off": True,
+                                "is_earned_coff": True,
+                                "earned_hours": round(w_hours, 1),
+                                "leave_type": "COFF",
+                                "is_fixed_off": False
+                            }
+                        else:
+                            # Standard regular Scheduled Day Off for flexible employee
+                            emp_assigns[d.isoformat()] = {
+                                "assignment_id": None,
+                                "shift_id": None,
+                                "shift_code": "DO",
+                                "shift_name": "Scheduled Rest Day (Day Off)",
+                                "department_id": None,
+                                "department_code": "",
+                                "department_color": "#64748B",
+                                "is_floating": False,
+                                "float_rank": 1,
+                                "is_pinned": False,
+                                "is_manual_override": False,
+                                "has_conflict": False,
+                                "conflict_reason": None,
+                                "is_leave": False,
+                                "is_day_off": True,
+                                "is_comp_off": False,
+                                "is_earned_coff": False,
+                                "leave_type": "DAY_OFF",
+                                "is_fixed_off": False
+                            }
                     else:
                         emp_assigns[d.isoformat()] = None  # Empty cell fillable by CP-SAT solver
 
@@ -842,6 +884,107 @@ def solve_remaining(plan_id: int, timeout_seconds: int = 15, db: Session = Depen
         "total_deficits": plan.total_deficits,
         "total_floats": plan.total_floats
     }
+
+@router.post("/{plan_id}/resolve-conflicts")
+def resolve_plan_conflicts(plan_id: int, db: Session = Depends(get_db)):
+    """Automatically identify and remove conflicting assignments:
+    1. Assigned on dedicated fixed day off.
+    2. Mandatory rest interval turnaround violation after previous day shift.
+    3. Exceeds max 5 consecutive days limit.
+    4. Overlaps with approved leave.
+    """
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).order_by(RosterAssignment.date).all()
+    employees = {e.id: e for e in db.query(Employee).all()}
+    shifts = {s.id: s for s in db.query(ShiftType).all()}
+    leaves = db.query(LeaveRecord).filter(
+        LeaveRecord.status == "APPROVED",
+        LeaveRecord.start_date <= plan.end_date,
+        LeaveRecord.end_date >= plan.start_date
+    ).all()
+    leave_set = set()
+    for l in leaves:
+        cur = l.start_date
+        while cur <= l.end_date:
+            leave_set.add((l.employee_id, cur))
+            cur += timedelta(days=1)
+
+    assign_by_emp = {}
+    for a in assignments:
+        assign_by_emp.setdefault(a.employee_id, []).append(a)
+
+    resolved = []
+    from src.solver.rules import calculate_inter_shift_rest_hours
+
+    for emp_id, emp_assigns in assign_by_emp.items():
+        emp = employees.get(emp_id)
+        if not emp:
+            continue
+        fixed_days = []
+        if emp.fixed_off_days:
+            try:
+                fixed_days = [int(x.strip()) for x in emp.fixed_off_days.split(",") if x.strip().isdigit()]
+            except Exception:
+                pass
+
+        emp_assigns.sort(key=lambda x: x.date)
+        prev_a = None
+        consecutive_streak = 0
+        last_date = None
+
+        for a in list(emp_assigns):
+            to_remove = False
+            reason = ""
+
+            if (emp_id, a.date) in leave_set:
+                to_remove = True
+                reason = "Removed shift overlapping with approved leave"
+            elif a.date.weekday() in fixed_days:
+                to_remove = True
+                reason = f"Removed shift on employee's dedicated regular day off ({a.date.strftime('%A')})"
+            else:
+                if last_date == a.date - timedelta(days=1):
+                    consecutive_streak += 1
+                else:
+                    consecutive_streak = 1
+                last_date = a.date
+
+                if consecutive_streak > 5:
+                    to_remove = True
+                    reason = f"Removed 6th consecutive day shift ({a.date})"
+                    consecutive_streak = 0
+                    last_date = None
+                elif prev_a and prev_a.date == a.date - timedelta(days=1):
+                    s_prev = shifts.get(prev_a.shift_type_id)
+                    s_curr = shifts.get(a.shift_type_id)
+                    if s_prev and s_curr:
+                        rest_hrs = calculate_inter_shift_rest_hours(s_prev, s_curr)
+                        if rest_hrs < s_prev.min_rest_hours_after:
+                            to_remove = True
+                            reason = f"Removed shift violating turnaround rest interval ({round(rest_hrs, 1)}h < {s_prev.min_rest_hours_after}h)"
+
+            if to_remove:
+                resolved.append({
+                    "employee_id": emp_id,
+                    "employee_name": emp.name,
+                    "date": a.date.isoformat(),
+                    "reason": reason
+                })
+                db.delete(a)
+                emp_assigns.remove(a)
+            else:
+                prev_a = a
+
+    db.commit()
+    return {
+        "message": f"Successfully auto-resolved {len(resolved)} labor conflicts.",
+        "resolved_count": len(resolved),
+        "resolved_items": resolved
+    }
+
 
 @router.get("/{plan_id}/deficits")
 def get_plan_deficits(plan_id: int, db: Session = Depends(get_db)):
