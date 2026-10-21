@@ -1110,6 +1110,8 @@ def resolve_all_deficits(plan_id: int, db: Session = Depends(get_db)):
                 is_manual_override=True,
                 is_floating=is_float
             )
+            new_a.shift_type = d.shift_type
+            new_a.department = d.department
             db.add(new_a)
             assignments.append(new_a)
             db.delete(d)

@@ -51,3 +51,29 @@ def test_full_roster_generation_and_export_lifecycle(client, sample_scenario):
     assert pdf_res.status_code == 200
     assert "pdf" in pdf_res.headers["content-type"]
     assert pdf_res.content.startswith(b"%PDF")
+
+
+def test_one_click_auto_resolve_all_deficits(client, test_db, sample_scenario):
+    """Verify 1-Click Auto-Resolve All Shortages handles chained consecutive deficits without NoneType start_time errors."""
+    from src.db.models import DeficitLog, Department, ShiftType
+    gen_res = client.post("/api/roster/generate", json={
+        "name": "Deficit Resolution Test",
+        "planning_year": 2026,
+        "planning_month": 11,
+        "variant_count": 1,
+        "timeout_seconds": 5
+    })
+    plan_id = gen_res.json()["plan_id"]
+
+    dept = test_db.query(Department).first()
+    shift = test_db.query(ShiftType).first()
+    d1 = DeficitLog(plan_id=plan_id, department_id=dept.id, shift_type_id=shift.id, date=date(2026, 11, 20), shortage_count=1, reason_code="UNSTAFFED")
+    d2 = DeficitLog(plan_id=plan_id, department_id=dept.id, shift_type_id=shift.id, date=date(2026, 11, 21), shortage_count=1, reason_code="UNSTAFFED")
+    test_db.add_all([d1, d2])
+    test_db.commit()
+
+    fix_res = client.post(f"/api/roster/{plan_id}/resolve-all-deficits")
+    assert fix_res.status_code == 200
+    res_data = fix_res.json()
+    assert "resolved_count" in res_data
+    assert res_data["resolved_count"] >= 2

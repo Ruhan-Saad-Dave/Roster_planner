@@ -8,12 +8,12 @@ def time_to_minutes(time_str: str) -> int:
     return parts[0] * 60 + parts[1]
 
 def calculate_inter_shift_rest_hours(shift1, shift2) -> float:
-    """Calculate the rest interval in hours between shift1 on day t
+    """Calculate the rest interval in hours between shift1 on day t and shift2 on day t+1."""
+    if not shift1 or not shift2 or not getattr(shift1, "start_time", None) or not getattr(shift2, "start_time", None):
+        return 24.0
 
-    and shift2 on day t+1.
-    """
     s1_start = time_to_minutes(shift1.start_time)
-    s1_dur = int(shift1.duration_hours * 60)
+    s1_dur = int((getattr(shift1, "duration_hours", 8.0) or 8.0) * 60)
     s1_end = s1_start + s1_dur
 
     s2_start = time_to_minutes(shift2.start_time)
@@ -26,12 +26,12 @@ def calculate_inter_shift_rest_hours(shift1, shift2) -> float:
     return rest_minutes / 60.0
 
 def is_transition_forbidden(shift1, shift2) -> bool:
-    """Check if shift1 followed by shift2 on the next calendar day violates
-
-    shift1's minimum rest hours requirement.
-    """
+    """Check if shift1 followed by shift2 on the next calendar day violates shift1's minimum rest hours requirement."""
+    if not shift1 or not shift2 or not getattr(shift1, "start_time", None) or not getattr(shift2, "start_time", None):
+        return False
     rest_hours = calculate_inter_shift_rest_hours(shift1, shift2)
-    return rest_hours < shift1.min_rest_hours_after
+    min_rest = getattr(shift1, "min_rest_hours_after", 14) or 14
+    return rest_hours < min_rest
 
 def validate_assignment_candidate(
     employee,
@@ -91,26 +91,32 @@ def validate_assignment_candidate(
     # 3. Rest Interval from Previous Day's Shift
     prev_date = target_date - timedelta(days=1)
     if prev_date in emp_assignments_by_date:
-        prev_shift = emp_assignments_by_date[prev_date].shift_type
-        rest_hrs = calculate_inter_shift_rest_hours(prev_shift, target_shift)
-        if rest_hrs < prev_shift.min_rest_hours_after:
-            violations.append({
-                "code": "REST_INTERVAL_VIOLATION",
-                "type": "HARD",
-                "message": f"Insufficient rest: {employee.name} worked {prev_shift.name} on {prev_date} ({prev_shift.start_time}-{prev_shift.end_time}). Rest interval before {target_shift.name} ({target_shift.start_time}) is {rest_hrs:.1f} hrs (minimum required: {prev_shift.min_rest_hours_after} hrs)."
-            })
+        prev_assign = emp_assignments_by_date[prev_date]
+        prev_shift = getattr(prev_assign, "shift_type", None)
+        if prev_shift and target_shift and getattr(prev_shift, "start_time", None) and getattr(target_shift, "start_time", None):
+            rest_hrs = calculate_inter_shift_rest_hours(prev_shift, target_shift)
+            min_rest = getattr(prev_shift, "min_rest_hours_after", 14) or 14
+            if rest_hrs < min_rest:
+                violations.append({
+                    "code": "REST_INTERVAL_VIOLATION",
+                    "type": "HARD",
+                    "message": f"Insufficient rest: {employee.name} worked {prev_shift.name} on {prev_date} ({prev_shift.start_time}-{prev_shift.end_time}). Rest interval before {target_shift.name} ({target_shift.start_time}) is {rest_hrs:.1f} hrs (minimum required: {min_rest} hrs)."
+                })
 
     # 4. Rest Interval into Next Day's Shift
     next_date = target_date + timedelta(days=1)
     if next_date in emp_assignments_by_date:
-        next_shift = emp_assignments_by_date[next_date].shift_type
-        rest_hrs = calculate_inter_shift_rest_hours(target_shift, next_shift)
-        if rest_hrs < target_shift.min_rest_hours_after:
-            violations.append({
-                "code": "REST_INTERVAL_VIOLATION",
-                "type": "HARD",
-                "message": f"Insufficient rest into next day: Proposed {target_shift.name} on {target_date} leaves only {rest_hrs:.1f} hrs before scheduled {next_shift.name} on {next_date} ({next_shift.start_time}) (minimum required: {target_shift.min_rest_hours_after} hrs)."
-            })
+        next_assign = emp_assignments_by_date[next_date]
+        next_shift = getattr(next_assign, "shift_type", None)
+        if next_shift and target_shift and getattr(target_shift, "start_time", None) and getattr(next_shift, "start_time", None):
+            rest_hrs = calculate_inter_shift_rest_hours(target_shift, next_shift)
+            min_rest = getattr(target_shift, "min_rest_hours_after", 14) or 14
+            if rest_hrs < min_rest:
+                violations.append({
+                    "code": "REST_INTERVAL_VIOLATION",
+                    "type": "HARD",
+                    "message": f"Insufficient rest into next day: Proposed {target_shift.name} on {target_date} leaves only {rest_hrs:.1f} hrs before scheduled {next_shift.name} on {next_date} ({next_shift.start_time}) (minimum required: {min_rest} hrs)."
+                })
 
     # 5. Consecutive Working Days Limit
     # Build a simulated streak including target_date
