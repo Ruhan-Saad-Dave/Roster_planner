@@ -40,9 +40,9 @@ class SchedulingContext:
         # Default multi-tier hierarchical weights
         default_weights = {
             "deficit": 1_000_000,
-            "float_rank2": 1_000,
-            "float_rank3": 5_000,
-            "dedicated_shift": 3_500,
+            "float_rank2": 5_000,
+            "float_rank3": 25_000,
+            "dedicated_shift": 2_500,
             "shift_stability": 50,
             "fairness": 50,
             "preferences": 10

@@ -65,7 +65,7 @@ def seed_standard_hospital(db=None):
             start_time="23:00:00",
             end_time="07:30:00",
             duration_hours=8.5,
-            min_rest_hours_after=16,
+            min_rest_hours_after=15,
             is_night_shift=True
         )
         db.add_all([morn, eve, night])

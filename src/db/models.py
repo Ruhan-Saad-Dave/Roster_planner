@@ -1,5 +1,5 @@
 """SQLAlchemy models for LocalRoster v2."""
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import (
     Column, Integer, String, Float, Boolean, Date, DateTime,
     ForeignKey, UniqueConstraint, CheckConstraint, Text, Index
@@ -16,8 +16,8 @@ class Department(Base):
     color_code = Column(String(7), nullable=False, default="#3B82F6")
     operating_regime = Column(String(16), nullable=False, default="24_7")
     is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     primary_employees = relationship("Employee", back_populates="primary_department", foreign_keys="Employee.primary_department_id")
@@ -43,7 +43,7 @@ class ShiftType(Base):
     min_rest_hours_after = Column(Integer, nullable=False, default=14)
     is_night_shift = Column(Boolean, nullable=False, default=False)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     # Relationships
     requirements = relationship("DepartmentRequirement", back_populates="shift_type", cascade="all, delete-orphan")
@@ -86,8 +86,8 @@ class Employee(Base):
     fixed_off_days = Column(String(64), nullable=True, default=None)  # Comma-separated day indices (0=Mon..6=Sun)
     preferred_shift_type_id = Column(Integer, ForeignKey("shift_types.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     primary_department = relationship("Department", back_populates="primary_employees", foreign_keys=[primary_department_id])
@@ -183,8 +183,8 @@ class RosterPlan(Base):
     total_deficits = Column(Integer, nullable=False, default=0)
     total_floats = Column(Integer, nullable=False, default=0)
     objective_score = Column(Float, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     # Relationships
     assignments = relationship("RosterAssignment", back_populates="plan", cascade="all, delete-orphan")
@@ -214,7 +214,7 @@ class RosterAssignment(Base):
     is_manual_override = Column(Boolean, nullable=False, default=False)
     is_floating = Column(Boolean, nullable=False, default=False)
     float_rank = Column(Integer, nullable=True, default=1)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
 
     plan = relationship("RosterPlan", back_populates="assignments")
     employee = relationship("Employee", back_populates="assignments")
@@ -257,5 +257,5 @@ class SystemSetting(Base):
 
     key = Column(String(64), primary_key=True)
     value = Column(Text, nullable=False)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 

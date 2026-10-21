@@ -39,7 +39,7 @@ def diagnose_deficit_reason(
 
     if eligible_count == 0:
         return "ZERO_QUALIFIED_STAFF"
-    if leaves_today >= (len(ctx.employees) // 3):
+    if leaves_today > 0 and leaves_today >= max(1, len(ctx.employees) // 3):
         return "CONCURRENT_LEAVES"
     if eligible_count <= 2:
         return "EXHAUSTED_ELIGIBLE_STAFF"
@@ -154,8 +154,9 @@ def generate_roster_variants(
             w["preferences"] = 80
             w["fairness"] = 25
         elif strat == "BALANCED":
-            w["float_rank2"] = 1_000
-            w["float_rank3"] = 5_000
+            w["float_rank2"] = 5_000
+            w["float_rank3"] = 25_000
+            w["dedicated_shift"] = 2_500
             w["preferences"] = 10
             w["fairness"] = 50
 

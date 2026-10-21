@@ -50,7 +50,7 @@ def sample_scenario(test_db):
     """Seed a 2-department, 2-shift scenario with 6 employees for fast testing."""
     # Shifts
     morn = ShiftType(code="MORN", name="Morning", start_time="07:00:00", end_time="15:30:00", duration_hours=8.5, min_rest_hours_after=14, is_night_shift=False)
-    night = ShiftType(code="NIGHT", name="Night", start_time="23:00:00", end_time="07:30:00", duration_hours=8.5, min_rest_hours_after=16, is_night_shift=True)
+    night = ShiftType(code="NIGHT", name="Night", start_time="23:00:00", end_time="07:30:00", duration_hours=8.5, min_rest_hours_after=15, is_night_shift=True)
     test_db.add_all([morn, night])
     test_db.flush()
 

@@ -178,6 +178,10 @@ def get_department_requirements(dept_id: int, db: Session = Depends(get_db)):
         for r in reqs
     ]
 
+def _persist_requirements(session: Session, department: Department):
+    session.commit()
+    session.refresh(department)
+
 @router.put("/departments/{dept_id}/requirements")
 def update_department_requirements(dept_id: int, req_in: UpdateRequirementsRequest, db: Session = Depends(get_db)):
     dept = db.query(Department).filter(Department.id == dept_id).first()
@@ -195,6 +199,23 @@ def update_department_requirements(dept_id: int, req_in: UpdateRequirementsReque
             optimal_staff=item.optimal_staff
         )
         db.add(req)
+
+    _persist_requirements(db, dept)
+    reqs = db.query(DepartmentRequirement).filter(DepartmentRequirement.department_id == dept_id).all()
+    return [
+        {
+            "id": r.id,
+            "department_id": r.department_id,
+            "shift_type_id": r.shift_type_id,
+            "shift_code": r.shift_type.code if r.shift_type else "",
+            "day_of_week": r.day_of_week,
+            "min_staff": r.min_staff,
+            "optimal_staff": r.optimal_staff
+        }
+        for r in reqs
+    ]
+
+
 @router.post("/departments/{dept_id}/apply-shift-regime")
 def apply_shift_regime(dept_id: int, regime: str = "hybrid_weekday3_weekend2", db: Session = Depends(get_db)):
     """Dynamically configure department staffing requirements for 3 shifts, 2 shifts, or weekday3/weekend2 hybrid."""
