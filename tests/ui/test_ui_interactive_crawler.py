@@ -128,6 +128,10 @@ def test_crawler_executes_all_button_backend_endpoints(client, sample_scenario):
     assert pdf_res.status_code == 200
 
     # 7. Pin / Lock Shift (inspector-pin-btn)
+    # Refresh schedule view to reflect assignments present after solve-remaining
+    sc_res = client.get(f"/api/roster/{plan_id}?view=staff_centric")
+    assert sc_res.status_code == 200
+
     # Find an assigned slot dynamically from the generated roster
     target_emp_id = None
     target_date = None
