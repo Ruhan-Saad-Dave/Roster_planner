@@ -79,6 +79,8 @@ class EmployeeCreate(BaseModel):
     primary_department_id: int
     max_hours_week: Optional[float] = 40.0
     fixed_off_days: Optional[str] = None
+    preferred_shift_type_id: Optional[int] = None
+    secondary_department_ids: Optional[List[int]] = None
 
 class EmployeeUpdate(BaseModel):
     employee_code: Optional[str] = None
@@ -87,6 +89,8 @@ class EmployeeUpdate(BaseModel):
     primary_department_id: Optional[int] = None
     max_hours_week: Optional[float] = None
     fixed_off_days: Optional[str] = None
+    preferred_shift_type_id: Optional[int] = None
+    secondary_department_ids: Optional[List[int]] = None
     is_active: Optional[bool] = None
 
 class EmployeeResponse(BaseModel):
@@ -98,6 +102,11 @@ class EmployeeResponse(BaseModel):
     primary_department_name: Optional[str] = None
     max_hours_week: float
     fixed_off_days: Optional[str] = None
+    preferred_shift_type_id: Optional[int] = None
+    preferred_shift_code: Optional[str] = None
+    preferred_shift_name: Optional[str] = None
+    secondary_department_ids: Optional[List[int]] = None
+    secondary_departments: Optional[List[Dict[str, Any]]] = None
     is_active: bool
 
     model_config = {"from_attributes": True}
@@ -187,6 +196,8 @@ class BulkUpdateEmployeesRequest(BaseModel):
     primary_department_id: Optional[int] = None
     max_hours_week: Optional[float] = None
     fixed_off_days: Optional[str] = None
+    preferred_shift_type_id: Optional[int] = None
+    secondary_department_ids: Optional[List[int]] = None
     is_active: Optional[bool] = None
 
 class PinOffRequest(BaseModel):

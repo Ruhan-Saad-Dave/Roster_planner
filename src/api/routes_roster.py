@@ -357,6 +357,11 @@ def get_plan_schedule(
                     has_conflict = False
                     conflict_reason = None
 
+                    # Dedicated fixed off violation check
+                    if d.weekday() in emp_fixed_days:
+                        has_conflict = True
+                        conflict_reason = f"Violation: Assigned to work on employee's dedicated regular day off ({d.strftime('%A')})"
+
                     # Turnaround check: Previous night shift followed by non-night or morning
                     if prev_shift and prev_shift.is_night_shift and s and not s.is_night_shift:
                         has_conflict = True
@@ -482,31 +487,8 @@ def get_plan_schedule(
                             "leave_type": "COFF",
                             "is_fixed_off": False
                         }
-                    elif is_solved_plan:
-                        # Regular scheduled rest day
-                        emp_assigns[d.isoformat()] = {
-                            "assignment_id": None,
-                            "shift_id": None,
-                            "shift_code": "OFF",
-                            "shift_name": "Scheduled Rest Day",
-                            "department_id": None,
-                            "department_code": "",
-                            "department_color": "#64748B",
-                            "is_floating": False,
-                            "float_rank": 1,
-                            "is_pinned": False,
-                            "is_manual_override": False,
-                            "has_conflict": False,
-                            "conflict_reason": None,
-                            "is_leave": False,
-                            "is_day_off": True,
-                            "is_comp_off": False,
-                            "is_earned_coff": False,
-                            "leave_type": "DAY_OFF",
-                            "is_fixed_off": False
-                        }
                     else:
-                        emp_assigns[d.isoformat()] = None  # Empty cell in draft/blank canvas
+                        emp_assigns[d.isoformat()] = None  # Empty cell fillable by CP-SAT solver
 
             dept_obj = departments.get(emp.primary_department_id)
             dept_color = dept_obj.color_code if dept_obj else "#3B82F6"
@@ -521,6 +503,9 @@ def get_plan_schedule(
                 "primary_department_color": dept_color,
                 "max_hours_week": emp.max_hours_week or 40.0,
                 "fixed_off_days": emp.fixed_off_days,
+                "preferred_shift_type_id": emp.preferred_shift_type_id,
+                "preferred_shift_code": shifts[emp.preferred_shift_type_id].code if emp.preferred_shift_type_id in shifts else None,
+                "preferred_shift_name": shifts[emp.preferred_shift_type_id].name if emp.preferred_shift_type_id in shifts else None,
                 "eligibilities": elig_by_emp.get(emp.id, []),
                 "assignments": emp_assigns,
                 "previous_month_summary": prev_emp_summaries.get(emp.id)

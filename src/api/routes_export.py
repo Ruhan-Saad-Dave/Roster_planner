@@ -2,7 +2,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.orm import Session
 from src.db.session import get_db
-from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Employee, Department, ShiftType
+from src.db.models import (
+    RosterPlan, RosterAssignment, DeficitLog, Employee, Department, ShiftType,
+    LeaveRecord, SystemSetting
+)
 from src.services.export_service import generate_excel_export, generate_pdf_export
 
 router = APIRouter(prefix="/api/export", tags=["Exports"])
@@ -22,6 +25,12 @@ def export_excel(
     employees = db.query(Employee).filter(Employee.is_active == True).all()
     departments = db.query(Department).all()
     shifts = db.query(ShiftType).all()
+    leaves = db.query(LeaveRecord).filter(
+        LeaveRecord.status == "APPROVED",
+        LeaveRecord.start_date <= plan.end_date,
+        LeaveRecord.end_date >= plan.start_date
+    ).all()
+    custom_settings = {s.key: s.value for s in db.query(SystemSetting).all()}
 
     excel_bytes = generate_excel_export(
         plan=plan,
@@ -30,6 +39,8 @@ def export_excel(
         employees=employees,
         departments=departments,
         shifts=shifts,
+        leaves=leaves,
+        custom_settings=custom_settings,
         view=view
     )
 
@@ -50,13 +61,21 @@ def export_pdf(plan_id: int, db: Session = Depends(get_db)):
     employees = db.query(Employee).filter(Employee.is_active == True).all()
     departments = db.query(Department).all()
     shifts = db.query(ShiftType).all()
+    leaves = db.query(LeaveRecord).filter(
+        LeaveRecord.status == "APPROVED",
+        LeaveRecord.start_date <= plan.end_date,
+        LeaveRecord.end_date >= plan.start_date
+    ).all()
+    custom_settings = {s.key: s.value for s in db.query(SystemSetting).all()}
 
     pdf_bytes = generate_pdf_export(
         plan=plan,
         assignments=assignments,
         employees=employees,
         departments=departments,
-        shifts=shifts
+        shifts=shifts,
+        leaves=leaves,
+        custom_settings=custom_settings
     )
 
     clean_filename = f"Roster_{plan.name.replace(' ', '_')}_{plan_id}.pdf"

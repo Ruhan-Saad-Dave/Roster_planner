@@ -84,12 +84,14 @@ class Employee(Base):
     primary_department_id = Column(Integer, ForeignKey("departments.id", ondelete="RESTRICT"), nullable=False)
     max_hours_week = Column(Float, nullable=False, default=40.0)
     fixed_off_days = Column(String(64), nullable=True, default=None)  # Comma-separated day indices (0=Mon..6=Sun)
+    preferred_shift_type_id = Column(Integer, ForeignKey("shift_types.id", ondelete="SET NULL"), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # Relationships
     primary_department = relationship("Department", back_populates="primary_employees", foreign_keys=[primary_department_id])
+    preferred_shift_type = relationship("ShiftType", foreign_keys=[preferred_shift_type_id])
     eligibilities = relationship("EmployeeDepartmentEligibility", back_populates="employee", cascade="all, delete-orphan")
     preferences = relationship("EmployeeShiftPreference", back_populates="employee", cascade="all, delete-orphan")
     leaves = relationship("LeaveRecord", back_populates="employee", cascade="all, delete-orphan")

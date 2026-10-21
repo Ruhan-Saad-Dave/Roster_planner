@@ -17,6 +17,26 @@ from src.api.schemas import (
 
 router = APIRouter(prefix="/api", tags=["Employees & Leaves"])
 
+def _build_employee_response(e: Employee) -> EmployeeResponse:
+    resp = EmployeeResponse.model_validate(e)
+    resp.primary_department_name = e.primary_department.name if e.primary_department else None
+    resp.preferred_shift_type_id = e.preferred_shift_type_id
+    resp.preferred_shift_code = e.preferred_shift_type.code if e.preferred_shift_type else None
+    resp.preferred_shift_name = e.preferred_shift_type.name if e.preferred_shift_type else None
+
+    sec_eligs = [el for el in (e.eligibilities or []) if el.preference_rank > 1 and el.can_float]
+    resp.secondary_department_ids = [el.department_id for el in sec_eligs]
+    resp.secondary_departments = [
+        {
+            "department_id": el.department_id,
+            "department_code": el.department.code if el.department else "",
+            "department_name": el.department.name if el.department else "",
+            "preference_rank": el.preference_rank
+        }
+        for el in sec_eligs
+    ]
+    return resp
+
 @router.get("/employees", response_model=List[EmployeeResponse])
 def list_employees(
     department_id: Optional[int] = None,
@@ -29,12 +49,7 @@ def list_employees(
     if department_id:
         q = q.filter(Employee.primary_department_id == department_id)
     emps = q.all()
-    res = []
-    for e in emps:
-        resp = EmployeeResponse.model_validate(e)
-        resp.primary_department_name = e.primary_department.name if e.primary_department else None
-        res.append(resp)
-    return res
+    return [_build_employee_response(e) for e in emps]
 
 @router.post("/employees", response_model=EmployeeResponse, status_code=201)
 def create_employee(emp_in: EmployeeCreate, db: Session = Depends(get_db)):
@@ -45,7 +60,11 @@ def create_employee(emp_in: EmployeeCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Employee code already exists.")
 
-    emp = Employee(**emp_in.model_dump())
+    emp_data = emp_in.model_dump(exclude={"secondary_department_ids"})
+    if "fixed_off_days" in emp_data and (not emp_data["fixed_off_days"] or not emp_data["fixed_off_days"].strip()):
+        emp_data["fixed_off_days"] = None
+
+    emp = Employee(**emp_data)
     db.add(emp)
     db.flush()
 
@@ -56,21 +75,27 @@ def create_employee(emp_in: EmployeeCreate, db: Session = Depends(get_db)):
         preference_rank=1,
         can_float=False
     ))
+
+    if emp_in.secondary_department_ids:
+        for sec_dept_id in emp_in.secondary_department_ids:
+            if sec_dept_id != dept.id:
+                db.add(EmployeeDepartmentEligibility(
+                    employee_id=emp.id,
+                    department_id=sec_dept_id,
+                    preference_rank=2,
+                    can_float=True
+                ))
+
     db.commit()
     db.refresh(emp)
-
-    resp = EmployeeResponse.model_validate(emp)
-    resp.primary_department_name = dept.name
-    return resp
+    return _build_employee_response(emp)
 
 @router.get("/employees/{emp_id}", response_model=EmployeeResponse)
 def get_employee(emp_id: int, db: Session = Depends(get_db)):
     emp = db.query(Employee).filter(Employee.id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found.")
-    resp = EmployeeResponse.model_validate(emp)
-    resp.primary_department_name = emp.primary_department.name if emp.primary_department else None
-    return resp
+    return _build_employee_response(emp)
 
 @router.put("/employees/{emp_id}", response_model=EmployeeResponse)
 def update_employee(emp_id: int, emp_in: EmployeeUpdate, db: Session = Depends(get_db)):
@@ -112,16 +137,35 @@ def update_employee(emp_id: int, emp_in: EmployeeUpdate, db: Session = Depends(g
         emp.email = emp_in.email
     if emp_in.max_hours_week is not None:
         emp.max_hours_week = emp_in.max_hours_week
-    if emp_in.fixed_off_days is not None:
-        emp.fixed_off_days = emp_in.fixed_off_days
+    if "fixed_off_days" in emp_in.model_fields_set:
+        if emp_in.fixed_off_days and emp_in.fixed_off_days.strip():
+            emp.fixed_off_days = emp_in.fixed_off_days.strip()
+        else:
+            emp.fixed_off_days = None
+    if "preferred_shift_type_id" in emp_in.model_fields_set:
+        if emp_in.preferred_shift_type_id and emp_in.preferred_shift_type_id > 0:
+            emp.preferred_shift_type_id = emp_in.preferred_shift_type_id
+        else:
+            emp.preferred_shift_type_id = None
+    if emp_in.secondary_department_ids is not None:
+        db.query(EmployeeDepartmentEligibility).filter(
+            EmployeeDepartmentEligibility.employee_id == emp.id,
+            EmployeeDepartmentEligibility.preference_rank > 1
+        ).delete()
+        for sec_dept_id in emp_in.secondary_department_ids:
+            if sec_dept_id != emp.primary_department_id:
+                db.add(EmployeeDepartmentEligibility(
+                    employee_id=emp.id,
+                    department_id=sec_dept_id,
+                    preference_rank=2,
+                    can_float=True
+                ))
     if emp_in.is_active is not None:
         emp.is_active = emp_in.is_active
 
     db.commit()
     db.refresh(emp)
-    resp = EmployeeResponse.model_validate(emp)
-    resp.primary_department_name = emp.primary_department.name if emp.primary_department else None
-    return resp
+    return _build_employee_response(emp)
 
 @router.delete("/employees/{emp_id}")
 def delete_employee(emp_id: int, db: Session = Depends(get_db)):
@@ -271,8 +315,29 @@ def bulk_update_employees(req: BulkUpdateEmployeesRequest, db: Session = Depends
                 ))
         if req.max_hours_week is not None:
             emp.max_hours_week = req.max_hours_week
-        if req.fixed_off_days is not None:
-            emp.fixed_off_days = req.fixed_off_days
+        if "fixed_off_days" in req.model_fields_set:
+            if req.fixed_off_days == "" or req.fixed_off_days is None or (isinstance(req.fixed_off_days, str) and not req.fixed_off_days.strip()):
+                emp.fixed_off_days = None
+            elif req.fixed_off_days != "KEEP":
+                emp.fixed_off_days = req.fixed_off_days.strip()
+        if "preferred_shift_type_id" in req.model_fields_set:
+            if req.preferred_shift_type_id == -1:  # Sentinel value to clear to flexible
+                emp.preferred_shift_type_id = None
+            elif req.preferred_shift_type_id is not None and req.preferred_shift_type_id > 0:
+                emp.preferred_shift_type_id = req.preferred_shift_type_id
+        if req.secondary_department_ids is not None:
+            db.query(EmployeeDepartmentEligibility).filter(
+                EmployeeDepartmentEligibility.employee_id == emp.id,
+                EmployeeDepartmentEligibility.preference_rank > 1
+            ).delete()
+            for sec_dept_id in req.secondary_department_ids:
+                if sec_dept_id != emp.primary_department_id:
+                    db.add(EmployeeDepartmentEligibility(
+                        employee_id=emp.id,
+                        department_id=sec_dept_id,
+                        preference_rank=2,
+                        can_float=True
+                    ))
         if req.is_active is not None:
             emp.is_active = req.is_active
 

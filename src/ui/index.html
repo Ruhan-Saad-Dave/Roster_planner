@@ -233,6 +233,10 @@
     </div>
     <div class="hover-popover-body">
       <div class="hover-row">
+        <span class="hover-label">Dedicated Shift:</span>
+        <span class="hover-value" id="emp-hover-shift" style="color:#0284c7;font-weight:600;">Flexible / Dynamic</span>
+      </div>
+      <div class="hover-row">
         <span class="hover-label">Contract Max:</span>
         <span class="hover-value" id="emp-hover-hours">40.0h / week</span>
       </div>
@@ -457,7 +461,7 @@
           <!-- Add / Edit Employee Card -->
           <div id="emp-form-card" class="crud-form-card hidden">
             <h4 id="emp-form-title" style="margin-bottom: 8px;">Create New Employee</h4>
-            <div style="display: grid; grid-template-columns: 1fr 2fr 2fr 1fr; gap: 8px; align-items: end;">
+            <div style="display: grid; grid-template-columns: 1fr 2fr 2fr 1.5fr 1fr; gap: 8px; align-items: end;">
               <label>
                 <span class="form-label">Employee Code:</span>
                 <input type="text" id="emp-form-code" class="text-input" placeholder="e.g. EMP033" style="width: 100%;">
@@ -471,28 +475,42 @@
                 <select id="emp-form-dept" class="select-input" style="width: 100%;"></select>
               </label>
               <label>
+                <span class="form-label">Dedicated Shift:</span>
+                <select id="emp-form-shift" class="select-input" style="width: 100%;">
+                  <option value="">Dynamic / Flexible Shift</option>
+                </select>
+              </label>
+              <label>
                 <span class="form-label">Max Hours/Wk:</span>
                 <input type="number" id="emp-form-hours" class="text-input" value="40.0" step="0.5" min="10" max="60" style="width: 100%;">
               </label>
             </div>
-            <div style="margin-top: 10px;">
-              <span class="form-label">Dedicated Recurring Days Off (Leave blank for flexible):</span>
-              <div style="display: flex; gap: 12px; align-items: center; margin-top: 4px; flex-wrap: wrap;">
-                <select id="emp-form-fixed-preset" class="select-input">
-                  <option value="">Dynamic / Flexible (No fixed days off)</option>
-                  <option value="5,6">Weekends (Saturday & Sunday)</option>
-                  <option value="0,1">Monday & Tuesday</option>
-                  <option value="6,0">Sunday & Monday</option>
-                  <option value="custom">Custom Days (Select Checkboxes)</option>
-                </select>
-                <div id="emp-fixed-days-checkboxes" style="display: flex; gap: 8px; font-size: 11px;">
-                  <label><input type="checkbox" class="fixed-day-cb" value="0"> Mo</label>
-                  <label><input type="checkbox" class="fixed-day-cb" value="1"> Tu</label>
-                  <label><input type="checkbox" class="fixed-day-cb" value="2"> We</label>
-                  <label><input type="checkbox" class="fixed-day-cb" value="3"> Th</label>
-                  <label><input type="checkbox" class="fixed-day-cb" value="4"> Fr</label>
-                  <label><input type="checkbox" class="fixed-day-cb" value="5"> Sa</label>
-                  <label><input type="checkbox" class="fixed-day-cb" value="6"> Su</label>
+            <div style="margin-top: 10px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+              <div>
+                <span class="form-label">Dedicated Recurring Days Off:</span>
+                <div style="display: flex; gap: 8px; align-items: center; margin-top: 4px; flex-wrap: wrap;">
+                  <select id="emp-form-fixed-preset" class="select-input" style="width: 100%;">
+                    <option value="">Dynamic / Flexible (No fixed days off)</option>
+                    <option value="5,6">Weekends (Saturday & Sunday)</option>
+                    <option value="0,1">Monday & Tuesday</option>
+                    <option value="6,0">Sunday & Monday</option>
+                    <option value="custom">Custom Days (Select Checkboxes)</option>
+                  </select>
+                  <div id="emp-fixed-days-checkboxes" style="display: flex; gap: 8px; font-size: 11px; margin-top: 4px;">
+                    <label><input type="checkbox" class="fixed-day-cb" value="0"> Mo</label>
+                    <label><input type="checkbox" class="fixed-day-cb" value="1"> Tu</label>
+                    <label><input type="checkbox" class="fixed-day-cb" value="2"> We</label>
+                    <label><input type="checkbox" class="fixed-day-cb" value="3"> Th</label>
+                    <label><input type="checkbox" class="fixed-day-cb" value="4"> Fr</label>
+                    <label><input type="checkbox" class="fixed-day-cb" value="5"> Sa</label>
+                    <label><input type="checkbox" class="fixed-day-cb" value="6"> Su</label>
+                  </div>
+                </div>
+              </div>
+              <div>
+                <span class="form-label">Secondary Float Departments (2nd preference backup during shortages):</span>
+                <div id="emp-secondary-depts-container" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; min-height: 28px; align-items: center;">
+                  <!-- Checkboxes populated dynamically from departments -->
                 </div>
               </div>
             </div>
@@ -524,6 +542,8 @@
                   <th>Code</th>
                   <th>Employee Name</th>
                   <th>Primary Department</th>
+                  <th>Dedicated Shift</th>
+                  <th>Float Depts</th>
                   <th>Max Hours</th>
                   <th>Fixed Off Days</th>
                   <th>Active</th>
@@ -1074,6 +1094,22 @@
           <select id="bulk-edit-dept-select" class="select-input" style="width: 100%;">
             <option value="KEEP">— Keep Existing Department —</option>
           </select>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label class="form-label">Dedicated Shift:</label>
+          <select id="bulk-edit-shift-select" class="select-input" style="width: 100%;">
+            <option value="KEEP">— Keep Existing Dedicated Shift —</option>
+            <option value="-1">Dynamic / Flexible (No dedicated shift)</option>
+          </select>
+        </div>
+
+        <div style="margin-bottom: 12px;">
+          <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; cursor: pointer;">
+            <input type="checkbox" id="bulk-edit-float-cb">
+            Update Secondary Float Departments:
+          </label>
+          <div id="bulk-secondary-depts-container" class="hidden" style="display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px;"></div>
         </div>
 
         <div style="margin-bottom: 12px;">

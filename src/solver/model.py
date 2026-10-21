@@ -42,6 +42,8 @@ class SchedulingContext:
             "deficit": 1_000_000,
             "float_rank2": 1_000,
             "float_rank3": 5_000,
+            "dedicated_shift": 2_500,
+            "shift_stability": 50,
             "fairness": 50,
             "preferences": 10
         }
@@ -246,6 +248,29 @@ class RosterModelBuilder:
             obj_terms.append(f2_var * w_f2)
         for f3_var in self.Float3.values():
             obj_terms.append(f3_var * w_f3)
+
+        # Tier 3.5: Dedicated Shift Preference (Worker sticks to their dedicated shift unless shortage coverage)
+        w_ded_shift = self.ctx.weights.get("dedicated_shift", 300)
+        for e in self.ctx.employees:
+            if getattr(e, "preferred_shift_type_id", None):
+                pref_id = e.preferred_shift_type_id
+                for s in self.ctx.shifts:
+                    if s.id != pref_id:
+                        for t in range(self.ctx.horizon_days):
+                            if (e.id, s.id, t) in self.V:
+                                obj_terms.append(self.V[e.id, s.id, t] * w_ded_shift)
+
+        # Tier 3.6: Shift Stability Across Days (Discourage erratic bouncing between morning, evening, night)
+        w_stability = self.ctx.weights.get("shift_stability", 50)
+        if len(self.ctx.shifts) > 1 and self.ctx.horizon_days > 1:
+            for e in self.ctx.employees:
+                for t in range(self.ctx.horizon_days - 1):
+                    switch_var = self.model.NewBoolVar(f"Switch_{e.id}_{t}")
+                    for s1 in self.ctx.shifts:
+                        for s2 in self.ctx.shifts:
+                            if s1.id != s2.id and (e.id, s1.id, t) in self.V and (e.id, s2.id, t + 1) in self.V:
+                                self.model.Add(switch_var >= self.V[e.id, s1.id, t] + self.V[e.id, s2.id, t + 1] - 1)
+                    obj_terms.append(switch_var * w_stability)
 
         # Tier 4: Soft Preferences (Rewarded / Subtracted)
         w_pref = self.ctx.weights["preferences"]

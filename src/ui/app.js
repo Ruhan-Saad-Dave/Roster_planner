@@ -797,6 +797,21 @@ function showEmployeeHover(td, r) {
     hoursEl.textContent = `${r.max_hours_week || 40.0}h / week (Max)`;
   }
 
+  const shiftEl = document.getElementById("emp-hover-shift");
+  if (shiftEl) {
+    if (r.preferred_shift_name) {
+      shiftEl.textContent = `☀️ ${r.preferred_shift_name} (${r.preferred_shift_code || ''})`;
+      shiftEl.style.color = "#0369a1";
+    } else if (r.preferred_shift_type_id && state.shifts) {
+      const sObj = state.shifts.find((s) => s.id === r.preferred_shift_type_id);
+      shiftEl.textContent = sObj ? `☀️ ${sObj.name}` : "Flexible / Dynamic";
+      shiftEl.style.color = sObj ? "#0369a1" : "#64748b";
+    } else {
+      shiftEl.textContent = "Flexible / Dynamic";
+      shiftEl.style.color = "#64748b";
+    }
+  }
+
   // Format regular fixed off days
   if (fixedOffEl) {
     const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
@@ -1731,11 +1746,53 @@ async function loadDepartmentDemand(deptId) {
   }
 }
 
+function populateEmpFormShifts(selectedShiftId = null) {
+  const select = document.getElementById("emp-form-shift");
+  if (!select) return;
+  select.innerHTML = `<option value="">Dynamic / Flexible Shift</option>`;
+  (state.shifts || []).forEach(s => {
+    const opt = document.createElement("option");
+    opt.value = s.id;
+    opt.textContent = `☀️ ${s.name} (${s.code} - ${s.duration_hours}h)`;
+    if (selectedShiftId && parseInt(selectedShiftId) === s.id) opt.selected = true;
+    select.appendChild(opt);
+  });
+}
+
+function populateEmpSecondaryDepts(primaryDeptId, selectedSecDeptIds = []) {
+  const container = document.getElementById("emp-secondary-depts-container");
+  if (!container) return;
+  container.innerHTML = "";
+  const secIds = Array.isArray(selectedSecDeptIds) ? selectedSecDeptIds.map(x => parseInt(x)) : [];
+  (state.departments || []).forEach(d => {
+    if (primaryDeptId && d.id === parseInt(primaryDeptId)) return;
+    const isChecked = secIds.includes(d.id);
+    const label = document.createElement("label");
+    label.className = "sec-dept-pill";
+    label.style.cssText = `display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;background:${isChecked ? '#e0f2fe' : '#f1f5f9'};border:1px solid ${isChecked ? '#38bdf8' : '#cbd5e1'};font-size:11px;cursor:pointer;`;
+    label.innerHTML = `
+      <input type="checkbox" class="sec-dept-cb" value="${d.id}" ${isChecked ? 'checked' : ''} style="margin:0;">
+      <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${d.color_code};"></span>
+      <b>${d.code}</b> (${d.name})
+    `;
+    const cb = label.querySelector(".sec-dept-cb");
+    cb.onchange = () => {
+      label.style.background = cb.checked ? '#e0f2fe' : '#f1f5f9';
+      label.style.borderColor = cb.checked ? '#38bdf8' : '#cbd5e1';
+    };
+    container.appendChild(label);
+  });
+  if (container.children.length === 0) {
+    container.innerHTML = `<span style="color:#94a3b8;font-size:11px;">No other departments available.</span>`;
+  }
+}
+
 async function loadOrgEmployees() {
   const filterDeptId = document.getElementById("emp-filter-dept-select").value;
   let url = "/api/employees?active_only=false";
   if (filterDeptId) url += `&department_id=${filterDeptId}`;
 
+  if (!state.shifts) state.shifts = await apiGet("/api/shift-types");
   const emps = await apiGet(url);
   document.getElementById("org-emp-count").textContent = emps.length;
 
@@ -1749,6 +1806,24 @@ async function loadOrgEmployees() {
     const dObj = state.departments.find(d => d.id === e.primary_department_id);
     const dColor = dObj ? dObj.color_code : "#3B82F6";
     const dCode = dObj ? dObj.code : "";
+
+    let dedShiftBadge = '<span style="color:#94a3b8;font-size:11px;">Flexible</span>';
+    if (e.preferred_shift_type_id) {
+      const ps = state.shifts ? state.shifts.find(s => s.id === e.preferred_shift_type_id) : null;
+      const psName = ps ? ps.name : (e.preferred_shift_name || "Shift");
+      dedShiftBadge = `<span class="brand-badge" style="background:#e0f2fe;color:#0369a1;font-weight:600;font-size:10px;">☀️ ${psName}</span>`;
+    }
+
+    let floatBadges = '<span style="color:#94a3b8;font-size:11px;">None</span>';
+    if (e.secondary_departments && e.secondary_departments.length > 0) {
+      floatBadges = e.secondary_departments.map(sd => `<span class="dept-badge-tag" style="font-size:9px;" title="${sd.department_name}">⚓ ${sd.department_code}</span>`).join(" ");
+    } else if (e.secondary_department_ids && e.secondary_department_ids.length > 0) {
+      const codes = e.secondary_department_ids.map(id => {
+        const d = state.departments ? state.departments.find(dept => dept.id === id) : null;
+        return d ? d.code : `D${id}`;
+      });
+      floatBadges = codes.map(c => `<span class="dept-badge-tag" style="font-size:9px;">⚓ ${c}</span>`).join(" ");
+    }
 
     let fixedOffBadge = '<span style="color:#94a3b8;font-size:11px;">Dynamic</span>';
     if (e.fixed_off_days) {
@@ -1767,6 +1842,8 @@ async function loadOrgEmployees() {
       <td><b>${e.employee_code}</b></td>
       <td>${e.name}</td>
       <td><span class="dept-badge-tag" style="background:${dColor};">${dCode}</span> ${e.primary_department_name || ''}</td>
+      <td>${dedShiftBadge}</td>
+      <td>${floatBadges}</td>
       <td>${e.max_hours_week} hrs/wk</td>
       <td>${fixedOffBadge}</td>
       <td><span class="brand-badge" style="background:${e.is_active ? '#dcfce7' : '#fee2e2'};color:${e.is_active ? '#166534' : '#991b1b'};">${e.is_active ? 'Active' : 'Inactive'}</span></td>
@@ -1836,6 +1913,9 @@ window.editEmployee = function(e) {
   document.getElementById("emp-form-dept").value = e.primary_department_id;
   document.getElementById("emp-form-hours").value = e.max_hours_week || 40.0;
   document.getElementById("emp-form-title").textContent = `Edit Employee: ${e.name}`;
+
+  populateEmpFormShifts(e.preferred_shift_type_id);
+  populateEmpSecondaryDepts(e.primary_department_id, e.secondary_department_ids || []);
 
   const preset = document.getElementById("emp-form-fixed-preset");
   document.querySelectorAll(".fixed-day-cb").forEach(cb => cb.checked = false);
@@ -2462,11 +2542,24 @@ function setupEventListeners() {
       document.getElementById("emp-form-code").value = "";
       document.getElementById("emp-form-name").value = "";
       document.getElementById("emp-form-hours").value = "40.0";
+      populateEmpFormShifts("");
+      const curDeptId = document.getElementById("emp-form-dept").value;
+      populateEmpSecondaryDepts(curDeptId, []);
+
       const preset = document.getElementById("emp-form-fixed-preset");
       if (preset) preset.value = "";
       document.querySelectorAll(".fixed-day-cb").forEach(cb => cb.checked = false);
       document.getElementById("emp-form-title").textContent = "Create New Employee";
       document.getElementById("emp-form-card").classList.remove("hidden");
+    };
+  }
+
+  const empDeptSelect = document.getElementById("emp-form-dept");
+  if (empDeptSelect) {
+    empDeptSelect.onchange = () => {
+      const curPrimaryId = parseInt(empDeptSelect.value);
+      const currentlyChecked = Array.from(document.querySelectorAll(".sec-dept-cb:checked")).map(cb => parseInt(cb.value));
+      populateEmpSecondaryDepts(curPrimaryId, currentlyChecked);
     };
   }
 
@@ -2511,19 +2604,34 @@ function setupEventListeners() {
       const primary_department_id = parseInt(document.getElementById("emp-form-dept").value);
       const max_hours_week = parseFloat(document.getElementById("emp-form-hours").value) || 40.0;
 
+      const prefShiftVal = document.getElementById("emp-form-shift").value;
+      const preferred_shift_type_id = prefShiftVal ? parseInt(prefShiftVal) : null;
+      const checkedSecDepts = Array.from(document.querySelectorAll(".sec-dept-cb:checked")).map(cb => parseInt(cb.value));
+
       const checkedDays = Array.from(document.querySelectorAll(".fixed-day-cb:checked")).map(cb => cb.value);
-      const fixed_off_days = checkedDays.length > 0 ? checkedDays.join(",") : null;
+      // Empty string "" explicitly tells backend to clear fixed_off_days to None
+      const fixed_off_days = checkedDays.length > 0 ? checkedDays.join(",") : "";
 
       if (!employee_code || !name || !primary_department_id) {
         alert("Please provide employee code, name, and primary department.");
         return;
       }
 
+      const payload = {
+        employee_code,
+        name,
+        primary_department_id,
+        max_hours_week,
+        fixed_off_days,
+        preferred_shift_type_id,
+        secondary_department_ids: checkedSecDepts
+      };
+
       try {
         if (id) {
-          await apiPut(`/api/employees/${id}`, { employee_code, name, primary_department_id, max_hours_week, fixed_off_days });
+          await apiPut(`/api/employees/${id}`, payload);
         } else {
-          await apiPost("/api/employees", { employee_code, name, primary_department_id, max_hours_week, fixed_off_days });
+          await apiPost("/api/employees", payload);
         }
         document.getElementById("emp-form-card").classList.add("hidden");
         await loadOrgEmployees();
@@ -2584,6 +2692,42 @@ function setupEventListeners() {
         deptSelect.innerHTML += `<option value="${d.id}">${d.name} (${d.code})</option>`;
       });
 
+      // Populate dedicated shift dropdown in bulk modal
+      const shiftSelect = document.getElementById("bulk-edit-shift-select");
+      if (shiftSelect) {
+        shiftSelect.innerHTML = `
+          <option value="KEEP">— Keep Existing Dedicated Shift —</option>
+          <option value="-1">Dynamic / Flexible (No dedicated shift)</option>
+        `;
+        (state.shifts || []).forEach(s => {
+          shiftSelect.innerHTML += `<option value="${s.id}">☀️ ${s.name} (${s.code})</option>`;
+        });
+      }
+
+      // Populate secondary floating depts in bulk modal
+      const secContainer = document.getElementById("bulk-secondary-depts-container");
+      if (secContainer) {
+        secContainer.innerHTML = "";
+        (state.departments || []).forEach(d => {
+          secContainer.innerHTML += `
+            <label class="sec-dept-pill" style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:12px;background:#f1f5f9;border:1px solid #cbd5e1;font-size:11px;cursor:pointer;">
+              <input type="checkbox" class="bulk-sec-dept-cb" value="${d.id}">
+              <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${d.color_code};"></span>
+              ${d.code} (${d.name})
+            </label>
+          `;
+        });
+      }
+      const floatCb = document.getElementById("bulk-edit-float-cb");
+      if (floatCb && secContainer) {
+        floatCb.checked = false;
+        secContainer.classList.add("hidden");
+        floatCb.onchange = (e) => {
+          if (e.target.checked) secContainer.classList.remove("hidden");
+          else secContainer.classList.add("hidden");
+        };
+      }
+
       document.getElementById("bulk-edit-hours-cb").checked = false;
       document.getElementById("bulk-edit-hours-input").disabled = true;
       document.getElementById("bulk-edit-hours-input").value = "40.0";
@@ -2627,6 +2771,16 @@ function setupEventListeners() {
 
       const deptVal = document.getElementById("bulk-edit-dept-select").value;
       if (deptVal !== "KEEP") payload.primary_department_id = parseInt(deptVal);
+
+      const shiftVal = document.getElementById("bulk-edit-shift-select").value;
+      if (shiftVal !== "KEEP") {
+        payload.preferred_shift_type_id = parseInt(shiftVal);
+      }
+
+      const floatCb = document.getElementById("bulk-edit-float-cb");
+      if (floatCb && floatCb.checked) {
+        payload.secondary_department_ids = Array.from(document.querySelectorAll(".bulk-sec-dept-cb:checked")).map(cb => parseInt(cb.value));
+      }
 
       if (document.getElementById("bulk-edit-hours-cb").checked) {
         payload.max_hours_week = parseFloat(document.getElementById("bulk-edit-hours-input").value) || 40.0;

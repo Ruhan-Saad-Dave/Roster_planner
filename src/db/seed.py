@@ -19,6 +19,9 @@ def init_db():
             if "fixed_off_days" not in cols:
                 conn.execute(text("ALTER TABLE employees ADD COLUMN fixed_off_days VARCHAR(64) DEFAULT NULL"))
                 conn.commit()
+            if "preferred_shift_type_id" not in cols:
+                conn.execute(text("ALTER TABLE employees ADD COLUMN preferred_shift_type_id INTEGER REFERENCES shift_types(id) DEFAULT NULL"))
+                conn.commit()
     except Exception as e:
         print(f"Schema check error: {e}")
 
