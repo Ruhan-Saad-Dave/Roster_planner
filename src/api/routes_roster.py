@@ -353,9 +353,11 @@ def get_plan_schedule(
             prev_shift = None
             last_worked_date = None
             coff_awarded_count = 0
+            consecutive_coff_count = 0
 
             for d in dates:
                 if (emp.id, d) in assign_by_emp_date:
+                    consecutive_coff_count = 0
                     a = assign_by_emp_date[(emp.id, d)]
                     s = shifts.get(a.shift_type_id)
                     dept = departments.get(a.department_id)
@@ -445,8 +447,10 @@ def get_plan_schedule(
                         "leave_type": l.leave_type,
                         "is_fixed_off": False
                     }
+                    consecutive_coff_count = (consecutive_coff_count + 1) if is_coff else 0
                 elif d.weekday() in emp_fixed_days:
                     consecutive_work_days = 0
+                    consecutive_coff_count = 0
                     prev_shift = None
                     last_worked_date = None
                     emp_assigns[d.isoformat()] = {
@@ -482,8 +486,15 @@ def get_plan_schedule(
                     if is_solved_plan and (w_hours >= contract_hours or w_shifts >= 5):
                         # Contract fulfilled for the week!
                         is_overtime_worker = (w_shifts > 5 or w_hours > contract_hours + 0.1)
-                        if is_overtime_worker and coff_awarded_count < max_comp_offs:
+                        max_consecutive_coff = 2 if continuous_comp_off else 1
+                        can_award_coff = (
+                            is_overtime_worker and
+                            coff_awarded_count < max_comp_offs and
+                            consecutive_coff_count < max_consecutive_coff
+                        )
+                        if can_award_coff:
                             coff_awarded_count += 1
+                            consecutive_coff_count += 1
                             emp_assigns[d.isoformat()] = {
                                 "assignment_id": None,
                                 "shift_id": None,
@@ -507,6 +518,7 @@ def get_plan_schedule(
                                 "is_fixed_off": False
                             }
                         else:
+                            consecutive_coff_count = 0
                             # Standard regular Scheduled Day Off for flexible employee
                             emp_assigns[d.isoformat()] = {
                                 "assignment_id": None,
@@ -530,6 +542,7 @@ def get_plan_schedule(
                                 "is_fixed_off": False
                             }
                     else:
+                        consecutive_coff_count = 0
                         emp_assigns[d.isoformat()] = None  # Empty cell fillable by CP-SAT solver
 
             dept_obj = departments.get(emp.primary_department_id)
@@ -553,6 +566,42 @@ def get_plan_schedule(
                 "previous_month_summary": prev_emp_summaries.get(emp.id)
             })
 
+        deficits_by_date = {}
+        deficits_list_by_date = {}
+        for d in deficits:
+            d_str = d.date.isoformat()
+            dept_code = departments[d.department_id].code if d.department_id in departments else ""
+            s_code = shifts[d.shift_type_id].code if d.shift_type_id in shifts else ""
+            d_dict = {
+                "deficit_id": d.id,
+                "department_id": d.department_id,
+                "department_code": dept_code,
+                "shift_type_id": d.shift_type_id,
+                "shift_code": s_code,
+                "shortage_count": d.shortage_count,
+                "reason_code": d.reason_code
+            }
+            deficits_list_by_date.setdefault(d_str, []).append(d_dict)
+            if d_str not in deficits_by_date:
+                deficits_by_date[d_str] = {
+                    "deficit_id": d.id,
+                    "department_id": d.department_id,
+                    "department_code": dept_code,
+                    "shift_type_id": d.shift_type_id,
+                    "shift_code": s_code,
+                    "shortage_count": d.shortage_count,
+                    "reason_code": d.reason_code,
+                    "all_deficits": [d_dict]
+                }
+            else:
+                entry = deficits_by_date[d_str]
+                entry["shortage_count"] += d.shortage_count
+                if s_code:
+                    existing_codes = [c.strip() for c in entry["shift_code"].split(",") if c.strip()]
+                    if s_code not in existing_codes:
+                        entry["shift_code"] = f"{entry['shift_code']}, {s_code}" if entry["shift_code"] else s_code
+                entry["all_deficits"].append(d_dict)
+
         return {
             "plan": {
                 "id": plan.id,
@@ -571,17 +620,8 @@ def get_plan_schedule(
             "previous_month_context": prev_context,
             "view_type": "staff_centric",
             "dates": [d.isoformat() for d in dates],
-            "deficits_by_date": {
-                d.date.isoformat(): {
-                    "deficit_id": d.id,
-                    "department_id": d.department_id,
-                    "department_code": departments[d.department_id].code if d.department_id in departments else "",
-                    "shift_type_id": d.shift_type_id,
-                    "shift_code": shifts[d.shift_type_id].code if d.shift_type_id in shifts else "",
-                    "shortage_count": d.shortage_count,
-                    "reason_code": d.reason_code
-                } for d in deficits
-            },
+            "deficits_by_date": deficits_by_date,
+            "deficits_list_by_date": deficits_list_by_date,
             "rows": rows
         }
 
@@ -755,6 +795,9 @@ def remove_assignment(
         if ltype in ["DAY_OFF", "DO", "COFF", "COMP_OFF"] or (ltype == "OTHER" and any(k in lnotes for k in ["DAY_OFF", "DAY OFF", "COFF", "COMP_OFF"])):
             db.delete(l)
             cleared = True
+
+    if cleared:
+        plan.status = "DRAFT"
 
     db.commit()
     return {"message": "Cell cleared and set as empty (fillable by solver).", "cleared": cleared}
@@ -1074,30 +1117,39 @@ def resolve_all_deficits(plan_id: int, db: Session = Depends(get_db)):
     all_emps = db.query(Employee).filter(Employee.is_active == True).all()
     assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
     leaves = db.query(LeaveRecord).all()
+    raw_elig = db.query(EmployeeDepartmentEligibility).all()
+    eligs = {(e.employee_id, e.department_id): e.preference_rank for e in raw_elig}
 
     resolved_count = 0
     for d in deficits:
-        working_today = {a.employee_id for a in assignments if a.date == d.date}
-        candidates = []
-        for emp in all_emps:
-            if emp.id in working_today:
-                continue
-            has_vac = any(
-                l.employee_id == emp.id and l.start_date <= d.date <= l.end_date and l.status == "APPROVED"
-                for l in leaves
-            )
-            if has_vac:
-                continue
-            val = validate_assignment_candidate(emp, d.department, d.shift_type, d.date, assignments, leaves)
-            candidates.append({
-                "emp": emp,
-                "violation_count": 0 if val["is_valid"] else len(val["violations"])
-            })
+        while d.shortage_count > 0:
+            working_today = {a.employee_id for a in assignments if a.date == d.date}
+            candidates = []
+            for emp in all_emps:
+                if emp.id in working_today:
+                    continue
+                has_vac = any(
+                    l.employee_id == emp.id and l.start_date <= d.date <= l.end_date and l.status == "APPROVED"
+                    for l in leaves
+                )
+                if has_vac:
+                    continue
+                val = validate_assignment_candidate(emp, d.department, d.shift_type, d.date, assignments, leaves)
+                is_float = (emp.primary_department_id != d.department_id)
+                candidates.append({
+                    "emp": emp,
+                    "is_float": is_float,
+                    "violation_count": 0 if val["is_valid"] else len(val["violations"])
+                })
 
-        if candidates:
-            candidates.sort(key=lambda x: x["violation_count"])
-            chosen = candidates[0]["emp"]
-            is_float = (chosen.primary_department_id != d.department_id)
+            if not candidates:
+                break
+
+            candidates.sort(key=lambda x: (x["violation_count"], 1 if x["is_float"] else 0))
+            chosen_cand = candidates[0]
+            chosen = chosen_cand["emp"]
+            is_float = chosen_cand["is_float"]
+            float_rank = eligs.get((chosen.id, d.department_id), 2 if is_float else 1)
 
             new_a = RosterAssignment(
                 plan_id=plan_id,
@@ -1108,14 +1160,18 @@ def resolve_all_deficits(plan_id: int, db: Session = Depends(get_db)):
                 assignment_source="MANUAL_OVERRIDE",
                 is_pinned=True,
                 is_manual_override=True,
-                is_floating=is_float
+                is_floating=is_float,
+                float_rank=float_rank
             )
             new_a.shift_type = d.shift_type
             new_a.department = d.department
             db.add(new_a)
             assignments.append(new_a)
-            db.delete(d)
+            d.shortage_count -= 1
             resolved_count += 1
+
+        if d.shortage_count == 0:
+            db.delete(d)
 
     db.flush()
     plan.total_deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).count()
@@ -1151,6 +1207,11 @@ def auto_award_compoffs(plan_id: int, db: Session = Depends(get_db)):
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found.")
 
+    system_settings = {s.key: s.value for s in db.query(SystemSetting).all()}
+    max_comp_offs = int(system_settings.get("max_comp_offs_per_employee", 2))
+    continuous_comp_off = system_settings.get("continuous_comp_off_enabled", "true").lower() in ["true", "1", "yes"]
+    max_consecutive = 2 if continuous_comp_off else 1
+
     employees = db.query(Employee).filter(Employee.is_active == True).all()
     shifts = {s.id: s for s in db.query(ShiftType).all()}
     assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
@@ -1173,12 +1234,20 @@ def auto_award_compoffs(plan_id: int, db: Session = Depends(get_db)):
     awarded_count = 0
     for emp in employees:
         emp_assigns = assign_by_emp.get(emp.id, {})
+        emp_coff_count = sum(
+            1 for l in leaves
+            if l.employee_id == emp.id and l.leave_type in ["COFF", "OTHER"] and plan.start_date <= l.start_date <= plan.end_date
+        )
+
         weeks = {}
         for d in dates:
             iso_yr, iso_wk, _ = d.isocalendar()
             weeks.setdefault((iso_yr, iso_wk), []).append(d)
 
         for (iso_yr, iso_wk), w_dates in weeks.items():
+            if emp_coff_count >= max_comp_offs:
+                break
+
             worked_shifts = [emp_assigns[d] for d in w_dates if d in emp_assigns and emp_assigns[d].shift_type_id in shifts]
             total_hours = sum(shifts[a.shift_type_id].duration_hours for a in worked_shifts)
             shift_count = len(worked_shifts)
@@ -1186,8 +1255,38 @@ def auto_award_compoffs(plan_id: int, db: Session = Depends(get_db)):
             contract_cap = emp.max_hours_week or 40.0
             if total_hours >= contract_cap or shift_count >= 5:
                 # Find off days in this week
-                unassigned_days = [d for d in w_dates if d not in emp_assigns and (emp.id, d) not in leave_by_emp_date]
+                unassigned_days = sorted([d for d in w_dates if d not in emp_assigns and (emp.id, d) not in leave_by_emp_date])
                 for target_day in unassigned_days:
+                    if emp_coff_count >= max_comp_offs:
+                        break
+
+                    # Check contiguous consecutive COFF streak (backward and forward) around target_day
+                    streak = 1
+                    chk = target_day - timedelta(days=1)
+                    while any(
+                        l.employee_id == emp.id
+                        and l.start_date <= chk <= l.end_date
+                        and l.leave_type in ["COFF", "OTHER"]
+                        and getattr(l, "status", "APPROVED") != "CANCELLED"
+                        for l in leaves
+                    ):
+                        streak += 1
+                        chk -= timedelta(days=1)
+
+                    chk = target_day + timedelta(days=1)
+                    while any(
+                        l.employee_id == emp.id
+                        and l.start_date <= chk <= l.end_date
+                        and l.leave_type in ["COFF", "OTHER"]
+                        and getattr(l, "status", "APPROVED") != "CANCELLED"
+                        for l in leaves
+                    ):
+                        streak += 1
+                        chk += timedelta(days=1)
+
+                    if streak > max_consecutive:
+                        continue
+
                     try:
                         new_leave = LeaveRecord(
                             employee_id=emp.id,
@@ -1199,6 +1298,7 @@ def auto_award_compoffs(plan_id: int, db: Session = Depends(get_db)):
                         )
                         db.add(new_leave)
                         db.flush()
+                        leaves.append(new_leave)
                     except Exception:
                         db.rollback()
                         new_leave = LeaveRecord(
@@ -1211,7 +1311,9 @@ def auto_award_compoffs(plan_id: int, db: Session = Depends(get_db)):
                         )
                         db.add(new_leave)
                         db.flush()
+                        leaves.append(new_leave)
                     leave_by_emp_date.add((emp.id, target_day))
+                    emp_coff_count += 1
                     awarded_count += 1
 
     db.commit()

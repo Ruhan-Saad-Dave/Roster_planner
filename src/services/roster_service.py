@@ -237,10 +237,122 @@ def solve_remaining_blank_slots(
     existing_assignments = db.query(RosterAssignment).filter(
         RosterAssignment.plan_id == plan_id,
         RosterAssignment.is_pinned == True
+    ).order_by(RosterAssignment.employee_id, RosterAssignment.date).all()
+
+    # Pre-solve sanitization: sanitize conflicting pinned shifts to prevent INFEASIBLE solver crash
+    from src.solver.rules import calculate_inter_shift_rest_hours
+    base_ctx = build_context_from_db(db, plan.start_date, plan.end_date)
+    shifts_map = {s.id: s for s in base_ctx.shifts}
+    leaves = db.query(LeaveRecord).filter(
+        LeaveRecord.status == "APPROVED",
+        LeaveRecord.start_date <= plan.end_date,
+        LeaveRecord.end_date >= plan.start_date
     ).all()
+    leave_set = set()
+    for l in leaves:
+        cur = l.start_date
+        while cur <= l.end_date:
+            leave_set.add((l.employee_id, cur))
+            cur += timedelta(days=1)
+
+    assign_by_emp = {}
+    for a in existing_assignments:
+        assign_by_emp.setdefault(a.employee_id, []).append(a)
+
+    sanitized_pinned = []
+    conflicted_pinned = []
+    slot_pinned_counts = {}
+
+    for emp_id, emp_pins in assign_by_emp.items():
+        emp_pins.sort(key=lambda x: x.date)
+        valid_dates = []
+        valid_shifts_by_date = {}
+
+        for a in emp_pins:
+            is_conflicted = False
+            t = (a.date - plan.start_date).days
+            slot_key = (a.department_id, a.shift_type_id, t)
+            req_demand = base_ctx.demand.get(slot_key, 0)
+
+            # 0. Zero demand, slot capacity, or employee department eligibility
+            if req_demand <= 0:
+                is_conflicted = True
+            elif slot_pinned_counts.get(slot_key, 0) >= req_demand:
+                is_conflicted = True
+            elif not base_ctx.is_eligible(emp_id, a.department_id):
+                is_conflicted = True
+
+            # 1. Leave overlap
+            elif (emp_id, a.date) in leave_set:
+                is_conflicted = True
+
+            # 2. Duplicate assignment on same date
+            elif a.date in valid_shifts_by_date:
+                is_conflicted = True
+
+            else:
+                # 3. Inter-shift turnaround rest interval with preceding day
+                prev_d = a.date - timedelta(days=1)
+                if prev_d in valid_shifts_by_date:
+                    prev_s = shifts_map.get(valid_shifts_by_date[prev_d].shift_type_id)
+                    curr_s = shifts_map.get(a.shift_type_id)
+                    if prev_s and curr_s:
+                        rest_hrs = calculate_inter_shift_rest_hours(prev_s, curr_s)
+                        min_rest = getattr(prev_s, "min_rest_hours_after", 14) or 14
+                        if rest_hrs < min_rest:
+                            is_conflicted = True
+
+                # 4. Turnaround rest interval with following day (if already in valid)
+                next_d = a.date + timedelta(days=1)
+                if not is_conflicted and next_d in valid_shifts_by_date:
+                    next_s = shifts_map.get(valid_shifts_by_date[next_d].shift_type_id)
+                    curr_s = shifts_map.get(a.shift_type_id)
+                    if curr_s and next_s:
+                        rest_hrs = calculate_inter_shift_rest_hours(curr_s, next_s)
+                        min_rest = getattr(curr_s, "min_rest_hours_after", 14) or 14
+                        if rest_hrs < min_rest:
+                            is_conflicted = True
+
+                # 5. Consecutive streak > 5
+                if not is_conflicted:
+                    streak = 1
+                    chk = a.date - timedelta(days=1)
+                    while chk in valid_shifts_by_date:
+                        streak += 1
+                        chk -= timedelta(days=1)
+                    chk = a.date + timedelta(days=1)
+                    while chk in valid_shifts_by_date:
+                        streak += 1
+                        chk += timedelta(days=1)
+                    if streak > 5:
+                        is_conflicted = True
+
+                # 6. Rolling 7-day window rest: in any 7-day window containing a.date, sum <= 5
+                if not is_conflicted:
+                    all_dates_sim = set(valid_dates) | {a.date}
+                    for start_offset in range(7):
+                        win_start = a.date - timedelta(days=start_offset)
+                        win_count = sum(1 for k in range(7) if (win_start + timedelta(days=k)) in all_dates_sim)
+                        if win_count > 5:
+                            is_conflicted = True
+                            break
+
+            if is_conflicted:
+                conflicted_pinned.append(a)
+            else:
+                valid_dates.append(a.date)
+                valid_shifts_by_date[a.date] = a
+                slot_pinned_counts[slot_key] = slot_pinned_counts.get(slot_key, 0) + 1
+                sanitized_pinned.append(a)
+
+    # Purge conflicting assignments from DB and session
+    for ca in conflicted_pinned:
+        ca.is_pinned = False
+        db.delete(ca)
+    db.flush()
 
     pinned_dict = {}
-    for a in existing_assignments:
+    for a in sanitized_pinned:
         t = (a.date - plan.start_date).days
         pinned_dict[(a.employee_id, t)] = (a.department_id, a.shift_type_id)
 
@@ -250,6 +362,15 @@ def solve_remaining_blank_slots(
     )
 
     res = solve_roster(ctx, timeout_seconds=timeout_seconds, strategy_name=plan.variant_strategy)
+
+    # Fallback shield: if CP-SAT still returns INFEASIBLE, solve with base context
+    if res.status == "INFEASIBLE":
+        # Clear all assignments for this plan to avoid UNIQUE constraint violations on relaxed insert
+        for p_obj in db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all():
+            db.delete(p_obj)
+        db.flush()
+        ctx_relaxed = build_context_from_db(db, plan.start_date, plan.end_date)
+        res = solve_roster(ctx_relaxed, timeout_seconds=timeout_seconds, strategy_name=plan.variant_strategy)
 
     # Delete non-pinned assignments and deficits
     db.query(RosterAssignment).filter(
