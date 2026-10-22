@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from src.db.session import get_db
-from src.db.models import Department, ShiftType, DepartmentRequirement
+from src.db.models import Department, ShiftType, DepartmentRequirement, RosterAssignment
 from src.api.schemas import (
     DepartmentCreate, DepartmentUpdate, DepartmentResponse,
     ShiftTypeCreate, ShiftTypeUpdate, ShiftTypeResponse,
@@ -142,6 +142,22 @@ def update_shift_type(shift_id: int, shift_in: ShiftTypeUpdate, db: Session = De
     db.commit()
     db.refresh(shift)
     return shift
+
+@router.delete("/shift-types/{shift_id}")
+def delete_shift_type(shift_id: int, db: Session = Depends(get_db)):
+    shift = db.query(ShiftType).filter(ShiftType.id == shift_id).first()
+    if not shift:
+        raise HTTPException(status_code=404, detail="Shift type not found.")
+
+    assign_count = db.query(RosterAssignment).filter(RosterAssignment.shift_type_id == shift_id).count()
+    if assign_count > 0:
+        shift.is_active = False
+        db.commit()
+        return {"message": f"Shift type '{shift.name}' has existing assignments in rosters, so it has been deactivated.", "deactivated": True}
+
+    db.delete(shift)
+    db.commit()
+    return {"message": f"Shift type '{shift.name}' deleted successfully.", "deleted": True}
 
 @router.get("/departments/{dept_id}/requirements")
 def get_department_requirements(dept_id: int, db: Session = Depends(get_db)):

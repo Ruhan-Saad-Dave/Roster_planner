@@ -173,6 +173,7 @@ class RosterPlan(Base):
     variant_strategy = Column(String(64), nullable=False, default="BALANCED")
     is_active_variant = Column(Boolean, nullable=False, default=True)
     name = Column(String(128), nullable=False)
+    department_ids = Column(String(256), nullable=True)  # Comma-separated department IDs (e.g. '1,2'), or None for All Depts
     planning_year = Column(Integer, nullable=True)
     planning_month = Column(Integer, nullable=True)
     start_date = Column(Date, nullable=False)

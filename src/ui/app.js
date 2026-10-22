@@ -120,14 +120,15 @@ async function loadPlans() {
 
   if (state.plans.length === 0) {
     // Automatically trigger initial default plan generation if database has 0 plans
-    updateHealthBanner("yellow", "🟡 No roster plans found. Click '+ New Roster' to generate initial schedule.");
+    updateHealthBanner("yellow", "🟡 No roster plans found. Click '+ New Plan' to generate initial schedule.");
     return;
   }
 
   state.plans.forEach(p => {
     const opt = document.createElement("option");
     opt.value = p.id;
-    opt.textContent = `${p.name} (${p.status})`;
+    const scopeTag = p.scope_label ? ` [${p.scope_label}]` : "";
+    opt.textContent = `${p.name}${scopeTag} (${p.status})`;
     select.appendChild(opt);
   });
 
@@ -135,6 +136,14 @@ async function loadPlans() {
     state.activePlanId = state.plans[0].id;
   }
   select.value = state.activePlanId;
+
+  // Update plan scope pill in header
+  const curPlan = state.plans.find(p => p.id === state.activePlanId);
+  const scopePill = document.getElementById("plan-scope-pill");
+  if (scopePill) {
+    scopePill.textContent = `🏢 ${curPlan && curPlan.scope_label ? curPlan.scope_label : 'All Depts'}`;
+  }
+
   await loadSchedule();
 }
 
@@ -192,7 +201,11 @@ async function loadSchedule() {
   const curPlan = state.plans.find(p => p.id === state.activePlanId);
   const planInfo = document.getElementById("status-plan-info");
   if (planInfo && curPlan) {
-    planInfo.textContent = `${curPlan.name} (${curPlan.status})`;
+    planInfo.textContent = `${curPlan.name} (${curPlan.status}) • ${curPlan.scope_label || 'All Depts'}`;
+  }
+  const scopePill = document.getElementById("plan-scope-pill");
+  if (scopePill && curPlan) {
+    scopePill.textContent = `🏢 ${curPlan.scope_label || 'All Depts'}`;
   }
   const orgInfo = document.getElementById("status-org-info");
   if (orgInfo) {
@@ -1246,13 +1259,17 @@ const BUTTON_EXPLANATIONS = {
     title: "❓ Interactive Help Guide",
     desc: "Comprehensive documentation, visual cheat sheets, solver tips, and keyboard shortcut references for managers.",
   },
+  "header-new-plan-btn": {
+    title: "⚡ + New Roster Plan",
+    desc: "Opens the generator to create a brand new roster plan in the database (with options for full organization or specific departments).",
+  },
   "new-plan-btn": {
-    title: "⚡ Generate CP-SAT Roster",
-    desc: "Executes Google OR-Tools mathematical optimization to generate a complete monthly schedule while balancing workloads and eliminating fatigue.",
+    title: "⚡ + New Roster Plan",
+    desc: "Opens the generator to create a brand new roster plan in the database (with options for full organization or specific departments).",
   },
   "solve-remaining-btn": {
-    title: "🧩 Solve Remaining Slots",
-    desc: "Fills empty cells (—) with optimal shifts without modifying any pre-filled or manager-pinned shifts.",
+    title: "🧩 Auto-Fill Remaining Slots (Solve Active)",
+    desc: "Fills empty cells (—) with optimal shifts on the current active roster without modifying pinned shifts or creating a new plan.",
   },
   "sidebar-solve-btn": {
     title: "🧩 Solve Remaining Slots",
@@ -1289,6 +1306,26 @@ const BUTTON_EXPLANATIONS = {
   "view-pane-roster-hub-btn": {
     title: "🗂️ Manage Rosters Hub",
     desc: "Open the roster manager to view metadata, rename, duplicate, or delete rosters.",
+  },
+  "hub-create-plan-btn": {
+    title: "⚡ + Generate New Roster",
+    desc: "Opens the generator dialog to create a new roster plan scoped to specific departments or the full company.",
+  },
+  "onboarding-btn-dept-roster": {
+    title: "🗂️ Department Rosters Hub",
+    desc: "Open the roster management hub to browse and launch sub-team schedules.",
+  },
+  "show-add-shift-btn": {
+    title: "➕ Add Custom Shift Type",
+    desc: "Define a new dynamic shift with customizable operating hours, duration, and rest constraints.",
+  },
+  "cancel-shift-btn": {
+    title: "Cancel Shift Edit",
+    desc: "Closes the shift definition form without saving changes.",
+  },
+  "save-shift-btn": {
+    title: "💾 Save Shift Type",
+    desc: "Saves this shift type and its operating hours to the database for mathematical solving.",
   },
   "duration-select": {
     title: "📅 Visible Horizon Filter",
@@ -2022,7 +2059,85 @@ window.deleteDepartment = async function(id, name) {
   }
 };
 
+function calcShiftDuration(startStr, endStr) {
+  if (!startStr || !endStr) return 8.0;
+  const [sh, sm] = startStr.split(":").map(Number);
+  const [eh, em] = endStr.split(":").map(Number);
+  let startMinutes = sh * 60 + sm;
+  let endMinutes = eh * 60 + em;
+  if (endMinutes <= startMinutes) {
+    endMinutes += 24 * 60; // Crosses midnight
+  }
+  const diffMinutes = endMinutes - startMinutes;
+  return Math.round((diffMinutes / 60) * 10) / 10;
+}
+
+async function loadShiftTypesList() {
+  const tbody = document.getElementById("shift-types-table-body");
+  if (!tbody) return;
+  try {
+    const shifts = await apiGet("/api/shift-types?active_only=false");
+    state.shifts = shifts.filter(s => s.is_active);
+    tbody.innerHTML = "";
+    if (shifts.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;padding:12px;color:var(--text-muted);">No shift types defined. Click "+ Add Custom Shift Type" above.</td></tr>`;
+      return;
+    }
+    shifts.forEach(s => {
+      const tr = document.createElement("tr");
+      tr.style.opacity = s.is_active ? "1" : "0.5";
+      const startTime = s.start_time ? s.start_time.slice(0, 5) : "--:--";
+      const endTime = s.end_time ? s.end_time.slice(0, 5) : "--:--";
+      tr.innerHTML = `
+        <td><span class="brand-badge" style="background:#e0e7ff;color:#3730a3;font-size:10px;">${escapeHtml(s.code)}</span></td>
+        <td><b>${escapeHtml(s.name)}</b></td>
+        <td><code>${startTime} – ${endTime}</code></td>
+        <td><b>${s.duration_hours}h</b></td>
+        <td>${s.min_rest_hours_after || 14}h</td>
+        <td>${s.is_night_shift ? '<span class="badge" style="background:#fef3c7;color:#92400e;">🌙 Night</span>' : '<span class="badge" style="background:#e0f2fe;color:#0369a1;">☀️ Day</span>'}</td>
+        <td style="text-align:right;">
+          <button class="btn btn-sm" onclick='editShiftType(${JSON.stringify(s)})'>✏️ Edit</button>
+          <button class="btn btn-sm" style="color:#dc2626;" onclick='deleteShiftType(${s.id}, "${escapeQuotes(s.name)}")'>🗑️</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#dc2626;">Error loading shifts: ${err.message}</td></tr>`;
+  }
+}
+
+window.editShiftType = function(s) {
+  document.getElementById("shift-form-id").value = s.id;
+  document.getElementById("shift-form-code").value = s.code;
+  document.getElementById("shift-form-name").value = s.name;
+  document.getElementById("shift-form-start").value = s.start_time ? s.start_time.slice(0, 5) : "07:00";
+  document.getElementById("shift-form-end").value = s.end_time ? s.end_time.slice(0, 5) : "15:30";
+  document.getElementById("shift-form-duration").value = s.duration_hours;
+  document.getElementById("shift-form-rest").value = s.min_rest_hours_after || 14;
+  document.getElementById("shift-form-night").checked = !!s.is_night_shift;
+  document.getElementById("shift-form-title").textContent = `Edit Shift: ${s.name} (${s.code})`;
+  document.getElementById("shift-form-card").classList.remove("hidden");
+};
+
+window.deleteShiftType = async function(id, name) {
+  if (!confirm(`Are you sure you want to delete or deactivate shift type "${name}"?`)) return;
+  try {
+    const res = await apiDelete(`/api/shift-types/${id}`);
+    alert(res.message || "Shift type updated.");
+    await loadShiftTypesList();
+    const deptSelect = document.getElementById("demand-dept-select");
+    if (deptSelect && deptSelect.value) {
+      await loadDepartmentDemand(parseInt(deptSelect.value));
+    }
+  } catch (err) {
+    alert("Cannot delete shift type: " + err.message);
+  }
+};
+
 async function initOrgDemandView() {
+  await loadShiftTypesList();
+
   const deptSelect = document.getElementById("demand-dept-select");
   if (!deptSelect) return;
 
@@ -2048,7 +2163,7 @@ async function loadDepartmentDemand(deptId) {
 
   try {
     const reqs = await apiGet(`/api/departments/${deptId}/requirements`);
-    state.shifts = state.shifts || await apiGet("/api/shift-types");
+    state.shifts = await apiGet("/api/shift-types");
 
     const reqMap = {};
     reqs.forEach(r => {
@@ -2625,12 +2740,36 @@ window.openRosterHub = async function() {
   const modal = document.getElementById("modal-roster-hub");
   if (!modal) return;
   modal.classList.remove("hidden");
+
+  // Populate department filter dropdown in roster hub if not populated
+  const filterSelect = document.getElementById("hub-dept-filter");
+  if (filterSelect) {
+    const curVal = filterSelect.value || "all";
+    if (!state.departments || state.departments.length === 0) {
+      try {
+        state.departments = await apiGet("/api/departments");
+      } catch (_) {}
+    }
+    let filterHtml = `
+      <option value="all">🏢 All Rosters</option>
+      <option value="all_depts">🌐 All Departments (Org-Wide)</option>
+    `;
+    (state.departments || []).forEach(d => {
+      filterHtml += `<option value="${d.id}">${escapeHtml(d.name)} (${escapeHtml(d.code)})</option>`;
+    });
+    filterSelect.innerHTML = filterHtml;
+    filterSelect.value = curVal;
+    filterSelect.onchange = () => renderRosterHub();
+  }
+
   await renderRosterHub();
 };
 
 window.renderRosterHub = async function() {
   const listEl = document.getElementById("roster-hub-list");
   const countBadge = document.getElementById("hub-plans-count");
+  const filterStatus = document.getElementById("hub-filter-status");
+  const filterSelect = document.getElementById("hub-dept-filter");
   if (!listEl) return;
 
   try {
@@ -2639,24 +2778,46 @@ window.renderRosterHub = async function() {
     console.error("Error refreshing plans for hub:", err);
   }
 
-  const plans = state.plans || [];
-  if (countBadge) {
-    countBadge.textContent = `${plans.length} ${plans.length === 1 ? 'Roster' : 'Rosters'}`;
+  const allPlans = state.plans || [];
+  const totalCount = allPlans.length;
+  const filterVal = filterSelect ? filterSelect.value : "all";
+
+  let filteredPlans = allPlans;
+  if (filterVal === "all_depts") {
+    filteredPlans = allPlans.filter(p => !p.department_ids || p.department_ids.trim() === "");
+  } else if (filterVal !== "all") {
+    const targetDeptId = parseInt(filterVal);
+    filteredPlans = allPlans.filter(p => {
+      if (!p.department_ids) return false;
+      const ids = p.department_ids.split(",").map(x => parseInt(x.trim())).filter(x => !isNaN(x));
+      return ids.includes(targetDeptId);
+    });
   }
 
-  if (plans.length === 0) {
+  if (countBadge) {
+    countBadge.textContent = `${totalCount} ${totalCount === 1 ? 'Roster' : 'Rosters'}`;
+  }
+  if (filterStatus) {
+    if (filterVal === "all") {
+      filterStatus.textContent = `Showing all ${totalCount} rosters`;
+    } else {
+      filterStatus.textContent = `Showing ${filteredPlans.length} of ${totalCount} rosters`;
+    }
+  }
+
+  if (filteredPlans.length === 0) {
     listEl.innerHTML = `
       <div style="padding:24px;text-align:center;color:var(--text-muted);background:#f8fafc;border-radius:8px;">
         <div style="font-size:24px;margin-bottom:6px;">📭</div>
-        <div style="font-weight:600;color:#334155;">No Rosters Found</div>
-        <div style="font-size:12px;margin-top:4px;">Generate your first schedule using the button above.</div>
+        <div style="font-weight:600;color:#334155;">No Rosters Found Matching Scope Filter</div>
+        <div style="font-size:12px;margin-top:4px;">Try selecting 'All Rosters' or generate a new department-specific plan.</div>
       </div>
     `;
     return;
   }
 
   let html = "";
-  plans.forEach(p => {
+  filteredPlans.forEach(p => {
     const isActive = p.id === state.activePlanId;
     const isVariant = p.parent_plan_id != null;
     const variantLabel = isVariant ? `<span class="badge" style="background:#e0e7ff;color:#4338ca;font-size:10px;">Variant</span>` : "";
@@ -2664,6 +2825,9 @@ window.renderRosterHub = async function() {
       ? `<span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;font-size:11px;">✓ ACTIVE IN WORKSPACE</span>`
       : "";
     const statusColor = p.status === "SOLVED" ? "#0284c7" : p.status === "PUBLISHED" ? "#16a34a" : "#ca8a04";
+    const scopeBadge = p.scope_label
+      ? `<span class="badge" style="background:#f1f5f9;color:#334155;border:1px solid #cbd5e1;font-size:10px;font-weight:600;">🏢 ${escapeHtml(p.scope_label)}</span>`
+      : "";
 
     html += `
       <div class="roster-hub-card ${isActive ? 'active-plan-card' : ''}">
@@ -2673,6 +2837,7 @@ window.renderRosterHub = async function() {
               <span class="roster-hub-title">${escapeHtml(p.name)}</span>
               ${activeBadge}
               ${variantLabel}
+              ${scopeBadge}
             </div>
             <div class="roster-hub-meta">
               <span class="badge" style="background:${statusColor}18;color:${statusColor};font-weight:600;font-size:10px;">${p.status}</span>
@@ -2792,6 +2957,16 @@ function initOnboarding() {
     };
   }
 
+  // Path 4: Department & Sub-Team Rosters
+  const btnDeptRoster = document.getElementById("onboarding-btn-dept-roster");
+  if (btnDeptRoster) {
+    btnDeptRoster.onclick = () => {
+      document.getElementById("modal-onboarding").classList.add("hidden");
+      if (cb && cb.checked) localStorage.setItem("localroster_onboarding_chosen", "true");
+      window.openRosterHub();
+    };
+  }
+
   if (cb) {
     cb.onchange = (e) => {
       if (e.target.checked) localStorage.setItem("localroster_onboarding_chosen", "true");
@@ -2823,12 +2998,37 @@ function setupEventListeners() {
     viewPaneHubBtn.onclick = () => window.openRosterHub();
   }
 
+  const headerNewPlanBtn = document.getElementById("header-new-plan-btn");
+  if (headerNewPlanBtn) {
+    headerNewPlanBtn.onclick = () => {
+      populateNewPlanDeptCheckboxes();
+      document.getElementById("modal-new-plan")?.classList.remove("hidden");
+      updateNewPlanPreview();
+    };
+  }
+
   const hubCreateBtn = document.getElementById("hub-create-plan-btn");
   if (hubCreateBtn) {
     hubCreateBtn.onclick = () => {
       document.getElementById("modal-roster-hub")?.classList.add("hidden");
+      populateNewPlanDeptCheckboxes();
       document.getElementById("modal-new-plan")?.classList.remove("hidden");
       updateNewPlanPreview();
+    };
+  }
+
+  // Department Scope Toggle in New Plan Modal
+  const scopeAllRadio = document.getElementById("new-plan-scope-all");
+  const scopeCustomRadio = document.getElementById("new-plan-scope-custom");
+  const deptCheckboxesDiv = document.getElementById("new-plan-dept-checkboxes");
+
+  if (scopeAllRadio && scopeCustomRadio && deptCheckboxesDiv) {
+    scopeAllRadio.onchange = () => {
+      deptCheckboxesDiv.classList.add("hidden");
+    };
+    scopeCustomRadio.onchange = () => {
+      populateNewPlanDeptCheckboxes();
+      deptCheckboxesDiv.classList.remove("hidden");
     };
   }
 
@@ -3155,6 +3355,99 @@ function setupEventListeners() {
     deptColorIn.oninput = (e) => {
       const hex = document.getElementById("dept-color-hex");
       if (hex) hex.textContent = e.target.value.toUpperCase();
+    };
+  }
+
+  // Shift Types CRUD forms & actions
+  const showAddShiftBtn = document.getElementById("show-add-shift-btn");
+  if (showAddShiftBtn) {
+    showAddShiftBtn.onclick = () => {
+      document.getElementById("shift-form-id").value = "";
+      document.getElementById("shift-form-code").value = "";
+      document.getElementById("shift-form-name").value = "";
+      document.getElementById("shift-form-start").value = "07:00";
+      document.getElementById("shift-form-end").value = "15:30";
+      document.getElementById("shift-form-duration").value = "8.5";
+      document.getElementById("shift-form-rest").value = "14";
+      document.getElementById("shift-form-night").checked = false;
+      document.getElementById("shift-form-title").textContent = "Create New Shift Type";
+      document.getElementById("shift-form-card").classList.remove("hidden");
+    };
+  }
+
+  const shiftStartIn = document.getElementById("shift-form-start");
+  const shiftEndIn = document.getElementById("shift-form-end");
+  const shiftDurIn = document.getElementById("shift-form-duration");
+  const shiftNightCb = document.getElementById("shift-form-night");
+
+  function onShiftTimeChange() {
+    if (shiftStartIn && shiftEndIn && shiftDurIn) {
+      const dur = calcShiftDuration(shiftStartIn.value, shiftEndIn.value);
+      shiftDurIn.value = dur;
+      const sParts = shiftStartIn.value.split(":").map(Number);
+      const eParts = shiftEndIn.value.split(":").map(Number);
+      if (sParts.length === 2 && eParts.length === 2) {
+        const sM = sParts[0] * 60 + sParts[1];
+        const eM = eParts[0] * 60 + eParts[1];
+        if (eM <= sM || sM >= 20 * 60 || (sM >= 18 * 60 && eM <= 9 * 60)) {
+          if (shiftNightCb) shiftNightCb.checked = true;
+        }
+      }
+    }
+  }
+  if (shiftStartIn) shiftStartIn.onchange = onShiftTimeChange;
+  if (shiftEndIn) shiftEndIn.onchange = onShiftTimeChange;
+
+  const cancelShiftBtn = document.getElementById("cancel-shift-btn");
+  if (cancelShiftBtn) {
+    cancelShiftBtn.onclick = () => {
+      document.getElementById("shift-form-card").classList.add("hidden");
+    };
+  }
+
+  const saveShiftBtn = document.getElementById("save-shift-btn");
+  if (saveShiftBtn) {
+    saveShiftBtn.onclick = async () => {
+      const id = document.getElementById("shift-form-id").value;
+      const code = document.getElementById("shift-form-code").value.trim().toUpperCase();
+      const name = document.getElementById("shift-form-name").value.trim();
+      const start_time = document.getElementById("shift-form-start").value;
+      const end_time = document.getElementById("shift-form-end").value;
+      const duration_hours = parseFloat(document.getElementById("shift-form-duration").value) || 8.0;
+      const min_rest_hours_after = parseInt(document.getElementById("shift-form-rest").value) || 14;
+      const is_night_shift = document.getElementById("shift-form-night").checked;
+
+      if (!code || !name || !start_time || !end_time) {
+        alert("Please provide shift code, name, start time, and end time.");
+        return;
+      }
+
+      const payload = {
+        code,
+        name,
+        start_time: start_time.length === 5 ? `${start_time}:00` : start_time,
+        end_time: end_time.length === 5 ? `${end_time}:00` : end_time,
+        duration_hours,
+        min_rest_hours_after,
+        is_night_shift
+      };
+
+      try {
+        if (id) {
+          await apiPut(`/api/shift-types/${id}`, payload);
+        } else {
+          await apiPost("/api/shift-types", payload);
+        }
+        document.getElementById("shift-form-card").classList.add("hidden");
+        await loadShiftTypesList();
+        const deptSelect = document.getElementById("demand-dept-select");
+        if (deptSelect && deptSelect.value) {
+          await loadDepartmentDemand(parseInt(deptSelect.value));
+        }
+        alert("Shift type saved successfully!");
+      } catch (err) {
+        alert("Error saving shift type: " + err.message);
+      }
     };
   }
 
@@ -3744,6 +4037,27 @@ function setupEventListeners() {
     };
   });
 
+  function populateNewPlanDeptCheckboxes() {
+    const container = document.getElementById("new-plan-dept-checkboxes");
+    if (!container) return;
+    container.innerHTML = "";
+    const depts = state.departments || [];
+    if (depts.length === 0) {
+      container.innerHTML = `<span style="color:#94a3b8;font-size:11px;">No departments found.</span>`;
+      return;
+    }
+    depts.forEach(d => {
+      const label = document.createElement("label");
+      label.style.cssText = "display:inline-flex;align-items:center;gap:5px;font-size:12px;background:#f8fafc;padding:3px 8px;border-radius:4px;border:1px solid #cbd5e1;cursor:pointer;";
+      label.innerHTML = `
+        <input type="checkbox" class="new-plan-dept-cb" value="${d.id}" checked>
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${d.color_code || '#3b82f6'};"></span>
+        <b>${escapeHtml(d.code)}</b> (${escapeHtml(d.name)})
+      `;
+      container.appendChild(label);
+    });
+  }
+
   // Live Calendar & Duration Preview in New Plan Modal
   function updateNewPlanPreview() {
     const yearEl = document.getElementById("new-plan-year");
@@ -3847,6 +4161,17 @@ function setupEventListeners() {
           endDate = cEnd;
         }
 
+        const isCustomScope = document.getElementById("new-plan-scope-custom")?.checked;
+        let selectedDeptIds = null;
+        if (isCustomScope) {
+          const checkedCbs = Array.from(document.querySelectorAll(".new-plan-dept-cb:checked"));
+          if (checkedCbs.length === 0) {
+            alert("Please select at least one department for custom department scope.");
+            return;
+          }
+          selectedDeptIds = checkedCbs.map(cb => parseInt(cb.value));
+        }
+
         document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
 
         const payload = {
@@ -3858,6 +4183,9 @@ function setupEventListeners() {
         if (startDate && endDate) {
           payload.start_date = startDate;
           payload.end_date = endDate;
+        }
+        if (selectedDeptIds && selectedDeptIds.length > 0) {
+          payload.department_ids = selectedDeptIds;
         }
 
         const result = await runSolverWithEngagingProgress(async () => {

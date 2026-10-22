@@ -21,11 +21,27 @@ def build_context_from_db(
     pinned_offs: Optional[Set] = None,
     weights: Optional[Dict[str, int]] = None,
     max_consecutive_days: int = 5,
-    min_rest_days_per_week: int = 2
+    min_rest_days_per_week: int = 2,
+    target_department_ids: Optional[List[int]] = None
 ) -> SchedulingContext:
     horizon_days = (end_date - start_date).days + 1
-    employees = db.query(Employee).filter(Employee.is_active == True).all()
-    departments = db.query(Department).filter(Department.is_active == True).all()
+
+    departments_q = db.query(Department).filter(Department.is_active == True)
+    if target_department_ids:
+        departments_q = departments_q.filter(Department.id.in_(target_department_ids))
+    departments = departments_q.all()
+    active_dept_ids = {d.id for d in departments}
+
+    all_employees = db.query(Employee).filter(Employee.is_active == True).all()
+    if target_department_ids:
+        eligs_for_target = db.query(EmployeeDepartmentEligibility).filter(
+            EmployeeDepartmentEligibility.department_id.in_(target_department_ids)
+        ).all()
+        target_eligible_emp_ids = {e.employee_id for e in eligs_for_target}
+        employees = [e for e in all_employees if e.primary_department_id in active_dept_ids or e.id in target_eligible_emp_ids]
+    else:
+        employees = all_employees
+
     shifts = db.query(ShiftType).filter(ShiftType.is_active == True).all()
 
     # 1. Demand Matrix
@@ -122,10 +138,12 @@ def save_solve_result_to_db(
     session_id: str,
     planning_year: Optional[int] = None,
     planning_month: Optional[int] = None,
-    is_active: bool = True
+    is_active: bool = True,
+    department_ids: Optional[str] = None
 ) -> RosterPlan:
     plan = RosterPlan(
         name=plan_name,
+        department_ids=department_ids,
         session_id=session_id,
         variant_name=f"Variant ({result.strategy_name.title()})",
         variant_strategy=result.strategy_name,
@@ -182,6 +200,7 @@ def generate_roster_plan(
     end_date: date,
     planning_year: Optional[int] = None,
     planning_month: Optional[int] = None,
+    target_department_ids: Optional[List[int]] = None,
     variant_count: int = 1,
     variant_strategies: Optional[List[str]] = None,
     timeout_seconds: int = 15,
@@ -194,14 +213,18 @@ def generate_roster_plan(
         db, start_date, end_date,
         weights=weights,
         max_consecutive_days=max_consecutive_days,
-        min_rest_days_per_week=min_rest_days_per_week
+        min_rest_days_per_week=min_rest_days_per_week,
+        target_department_ids=target_department_ids
     )
+
+    dept_ids_str = ",".join(str(x) for x in sorted(target_department_ids)) if target_department_ids else None
 
     if variant_count <= 1:
         res = solve_roster(ctx, timeout_seconds=timeout_seconds, strategy_name="BALANCED")
         plan = save_solve_result_to_db(
             db, name, start_date, end_date, res, session_id,
-            planning_year, planning_month, is_active=True
+            planning_year, planning_month, is_active=True,
+            department_ids=dept_ids_str
         )
         return {
             "session_id": session_id,
@@ -215,7 +238,8 @@ def generate_roster_plan(
         for i, res in enumerate(results):
             p = save_solve_result_to_db(
                 db, f"{name} - {res.strategy_name}", start_date, end_date, res, session_id,
-                planning_year, planning_month, is_active=(i == 0)
+                planning_year, planning_month, is_active=(i == 0),
+                department_ids=dept_ids_str
             )
             plans.append(p)
         return {
@@ -241,7 +265,8 @@ def solve_remaining_blank_slots(
 
     # Pre-solve sanitization: sanitize conflicting pinned shifts to prevent INFEASIBLE solver crash
     from src.solver.rules import calculate_inter_shift_rest_hours
-    base_ctx = build_context_from_db(db, plan.start_date, plan.end_date)
+    target_depts = [int(x) for x in plan.department_ids.split(",") if x.isdigit()] if plan.department_ids else None
+    base_ctx = build_context_from_db(db, plan.start_date, plan.end_date, target_department_ids=target_depts)
     shifts_map = {s.id: s for s in base_ctx.shifts}
     leaves = db.query(LeaveRecord).filter(
         LeaveRecord.status == "APPROVED",
@@ -358,7 +383,8 @@ def solve_remaining_blank_slots(
 
     ctx = build_context_from_db(
         db, plan.start_date, plan.end_date,
-        pinned_assignments=pinned_dict
+        pinned_assignments=pinned_dict,
+        target_department_ids=target_depts
     )
 
     res = solve_roster(ctx, timeout_seconds=timeout_seconds, strategy_name=plan.variant_strategy)

@@ -32,11 +32,23 @@ def list_plans(
     if month:
         q = q.filter(RosterPlan.planning_month == month)
     plans = q.all()
-    return [
-        {
+    dept_map = {d.id: d for d in db.query(Department).all()}
+    res = []
+    for p in plans:
+        if p.department_ids:
+            dept_id_list = [int(x) for x in p.department_ids.split(",") if x.isdigit()]
+            dept_names = [dept_map[did].name for did in dept_id_list if did in dept_map]
+            scope_label = ", ".join(dept_names) if dept_names else "Specific Depts"
+        else:
+            dept_id_list = []
+            scope_label = "All Departments"
+
+        res.append({
             "id": p.id,
             "session_id": p.session_id,
             "name": p.name,
+            "department_ids": dept_id_list,
+            "scope_label": scope_label,
             "variant_name": p.variant_name,
             "variant_strategy": p.variant_strategy,
             "is_active_variant": p.is_active_variant,
@@ -52,9 +64,8 @@ def list_plans(
             "total_floats": p.total_floats,
             "solve_time_seconds": p.solve_time_seconds,
             "created_at": p.created_at.isoformat()
-        }
-        for p in plans
-    ]
+        })
+    return res
 
 @router.get("/previous-month-summary")
 def get_previous_month_summary(
@@ -170,6 +181,7 @@ def trigger_generation(req: GenerateRosterRequest, db: Session = Depends(get_db)
         end_date=end_date,
         planning_year=req.planning_year,
         planning_month=req.planning_month,
+        target_department_ids=req.department_ids,
         variant_count=req.variant_count,
         variant_strategies=req.variant_strategies,
         timeout_seconds=req.timeout_seconds,
@@ -217,6 +229,8 @@ def update_plan(plan_id: int, req: UpdatePlanRequest, db: Session = Depends(get_
         plan.name = req.name.strip()
     if req.status is not None:
         plan.status = req.status
+    if req.department_ids is not None:
+        plan.department_ids = req.department_ids.strip() if req.department_ids.strip() else None
     if req.is_active_variant is not None:
         if req.is_active_variant:
             # Deactivate other variants in same session
@@ -230,6 +244,7 @@ def update_plan(plan_id: int, req: UpdatePlanRequest, db: Session = Depends(get_
         "id": plan.id,
         "name": plan.name,
         "status": plan.status,
+        "department_ids": plan.department_ids,
         "is_active_variant": plan.is_active_variant
     }
 
@@ -257,6 +272,7 @@ def duplicate_plan(plan_id: int, db: Session = Depends(get_db)):
     new_plan = RosterPlan(
         session_id=new_session_id,
         name=f"Copy of {plan.name}",
+        department_ids=plan.department_ids,
         variant_name=f"{plan.variant_name} (Copy)",
         variant_strategy=plan.variant_strategy,
         is_active_variant=True,
@@ -324,6 +340,13 @@ def get_plan_schedule(
     departments = {d.id: d for d in db.query(Department).all()}
     shifts = {s.id: s for s in db.query(ShiftType).all()}
     assignments = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
+
+    if plan.department_ids and not department_id:
+        target_did_set = {int(x) for x in plan.department_ids.split(",") if x.isdigit()}
+        assigned_emp_ids = {a.employee_id for a in assignments}
+        employees = [e for e in employees if e.primary_department_id in target_did_set or e.id in assigned_emp_ids]
+    elif department_id:
+        employees = [e for e in employees if e.primary_department_id == department_id]
     deficits = db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).all()
     raw_eligibilities = db.query(EmployeeDepartmentEligibility).all()
     elig_by_emp = {}
@@ -708,11 +731,18 @@ def get_plan_schedule(
                         entry["shift_code"] = f"{entry['shift_code']}, {s_code}" if entry["shift_code"] else s_code
                 entry["all_deficits"].append(d_dict)
 
+        dept_ids_list = [int(x) for x in plan.department_ids.split(",") if x.isdigit()] if plan.department_ids else []
+        scope_lbl = ", ".join(departments[int(x)].name for x in plan.department_ids.split(",") if int(x) in departments) if plan.department_ids else "All Departments"
+
         return {
+            "department_ids": dept_ids_list,
+            "scope_label": scope_lbl,
             "plan": {
                 "id": plan.id,
                 "session_id": plan.session_id,
                 "name": plan.name,
+                "department_ids": dept_ids_list,
+                "scope_label": scope_lbl,
                 "variant_name": plan.variant_name,
                 "planning_year": plan.planning_year,
                 "planning_month": plan.planning_month,
@@ -778,8 +808,13 @@ def get_plan_schedule(
                         "deficit": def_entry.shortage_count if def_entry else 0
                     })
 
+        dept_ids_list = [int(x) for x in plan.department_ids.split(",") if x.isdigit()] if plan.department_ids else []
+        scope_lbl = ", ".join(departments[int(x)].name for x in plan.department_ids.split(",") if int(x) in departments) if plan.department_ids else "All Departments"
+
         return {
             "plan_id": plan.id,
+            "department_ids": dept_ids_list,
+            "scope_label": scope_lbl,
             "previous_month_context": prev_context,
             "view_type": "slot_centric",
             "slots": slots

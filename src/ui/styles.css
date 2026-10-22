@@ -46,51 +46,122 @@ body {
 
 /* Header & Nav */
 .app-header {
-  background: #0f172a;
+  background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
   color: #ffffff;
-  padding: 6px 16px;
+  padding: 8px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
   z-index: 20;
 }
 
-.brand {
+.header-brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  font-weight: 700;
-  font-size: 15px;
-  letter-spacing: -0.02em;
 }
 
-.brand-badge {
-  background: #2563eb;
-  color: #fff;
-  padding: 2px 6px;
-  border-radius: 4px;
+.brand-logo-icon {
+  width: 30px;
+  height: 30px;
+  background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+  color: #ffffff;
+  border-radius: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: -0.05em;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+}
+
+.brand-text-block {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+}
+
+.brand-name {
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  color: #ffffff;
+}
+
+.brand-sub {
   font-size: 10px;
+  color: #94a3b8;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+.brand-engine-pill {
+  background: rgba(37, 99, 235, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(96, 165, 250, 0.3);
+  padding: 2px 7px;
+  border-radius: 12px;
+  font-size: 10px;
+  font-weight: 600;
 }
 
 .plan-header-selector {
   display: flex;
   align-items: center;
   gap: 8px;
+  background: rgba(15, 23, 42, 0.6);
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid #334155;
 }
 
 .plan-header-label {
   font-size: 10px;
-  font-weight: 700;
+  font-weight: 800;
   color: #94a3b8;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.06em;
 }
 
 .select-plan-styled {
   background: #1e293b !important;
   color: #f8fafc !important;
-  border: 1px solid #334155 !important;
+  border: 1px solid #475569 !important;
   font-weight: 600;
-  min-width: 250px;
+  min-width: 220px;
+  font-size: 12px;
+  border-radius: 4px;
+}
+
+.plan-scope-pill {
+  font-size: 11px;
+  font-weight: 600;
+  background: #1e293b;
+  color: #38bdf8;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid #0284c7;
+  white-space: nowrap;
+}
+
+.btn-header-create {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  font-weight: 700;
+  border: none;
+  padding: 4px 10px;
+  border-radius: 4px;
+  font-size: 11px;
+  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-header-create:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);
 }
 
 .header-right-actions {
@@ -103,10 +174,32 @@ body {
   background: #1e293b;
   color: #f8fafc;
   border-color: #334155;
+  font-size: 12px;
 }
 
 .btn-header:hover {
   background: #334155;
+}
+
+.btn-hero-solve {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-weight: 700;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 6px;
+  box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-hero-solve:hover {
+  background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+  box-shadow: 0 4px 8px rgba(37, 99, 235, 0.35);
 }
 
 /* Excel-Style Ribbon Category Tabs */

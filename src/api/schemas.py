@@ -152,6 +152,7 @@ class UpdatePlanRequest(BaseModel):
     name: Optional[str] = None
     status: Optional[str] = None
     is_active_variant: Optional[bool] = None
+    department_ids: Optional[str] = None
 
 class GenerateRosterRequest(BaseModel):
     name: str = "Workforce Roster Plan"
@@ -159,6 +160,7 @@ class GenerateRosterRequest(BaseModel):
     planning_month: Optional[int] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    department_ids: Optional[List[int]] = None
     variant_count: int = 1
     variant_strategies: Optional[List[str]] = None
     timeout_seconds: int = 15

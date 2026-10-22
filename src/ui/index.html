@@ -8,24 +8,24 @@
 </head>
 <body>
 
-  <!-- Top Persistent Header -->
+  <!-- Modern Top Executive Header Bar -->
   <header class="app-header">
-    <div class="brand">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-        <line x1="16" y1="2" x2="16" y2="6"></line>
-        <line x1="8" y1="2" x2="8" y2="6"></line>
-        <line x1="3" y1="10" x2="21" y2="10"></line>
-      </svg>
-      <span>LocalRoster</span>
-      <span class="brand-badge">v2.0 Offline</span>
+    <div class="header-brand">
+      <div class="brand-logo-icon">LR</div>
+      <div class="brand-text-block">
+        <span class="brand-name">LocalRoster</span>
+        <span class="brand-sub">Workforce Optimization Studio</span>
+      </div>
+      <span class="brand-engine-pill">v2.1 Offline</span>
     </div>
 
-    <!-- Active Roster Plan Selector in Top Header -->
+    <!-- Active Roster Workspace Pill in Top Header -->
     <div class="plan-header-selector">
-      <span class="plan-header-label">ACTIVE ROSTER:</span>
-      <select id="plan-select" class="select-input select-plan-styled"></select>
+      <span class="plan-header-label">WORKSPACE:</span>
+      <select id="plan-select" class="select-input select-plan-styled" title="Switch active roster workspace"></select>
+      <span id="plan-scope-pill" class="plan-scope-pill" title="Target department scope of active roster">🏢 All Depts</span>
       <button id="manage-rosters-btn" class="btn btn-sm btn-header-hub" title="Open Roster Hub to view all rosters, rename, duplicate, or delete">🗂️ Roster Hub</button>
+      <button id="header-new-plan-btn" class="btn btn-sm btn-header-create" title="Create a new roster plan in the database">+ New Plan</button>
     </div>
 
     <!-- Right Header Actions -->
@@ -48,15 +48,20 @@
     <!-- TAB 1: Schedule & Solve -->
     <div class="ribbon-pane active" id="pane-schedule">
       <div class="ribbon-group">
-        <span class="ribbon-group-title">Solver Execution</span>
+        <span class="ribbon-group-title">Active Roster Solver</span>
         <div class="ribbon-group-tools">
-          <button id="new-plan-btn" class="btn btn-hero-generate" title="Generate CP-SAT Optimized Roster">⚡ + Generate Roster</button>
-          <button id="solve-remaining-btn" class="btn btn-sm btn-accent" title="Solve blank slots while keeping pinned slots locked">Solve Remaining</button>
+          <button id="solve-remaining-btn" class="btn btn-hero-solve" title="Solves and auto-fills empty cells (—) in the current active roster without modifying pinned shifts or creating duplicate plans">🧩 Auto-Fill Remaining Slots</button>
           <button id="prefill-toggle-btn" class="btn btn-sm">Prefill Mode: OFF</button>
-          <button id="variants-btn" class="btn btn-sm">Compare Variants</button>
-          <button id="find-replace-btn" class="btn btn-sm" title="Find and replace shift codes or highlight matching cells across grid">🔍 Find & Replace</button>
           <button id="award-compoff-btn" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border-color:#fde68a;" title="Automatically award Compensatory Off (COFF) holidays to employees who worked overtime">☕ Award Comp Offs</button>
           <button id="clear-canvas-btn" class="btn btn-sm" style="background:#fee2e2;color:#991b1b;border-color:#fca5a5;" title="Clear all cell assignments to restart work from a blank canvas">🗑️ Clear Canvas</button>
+        </div>
+      </div>
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Roster Lifecycle & Tools</span>
+        <div class="ribbon-group-tools">
+          <button id="new-plan-btn" class="btn btn-sm" title="Create and mathematically optimize a brand-new roster plan in the database">⚡ + New Roster Plan...</button>
+          <button id="variants-btn" class="btn btn-sm">Compare Variants</button>
+          <button id="find-replace-btn" class="btn btn-sm" title="Find and replace shift codes or highlight matching cells across grid">🔍 Find & Replace</button>
         </div>
       </div>
       <div class="ribbon-group">
@@ -325,17 +330,45 @@
 
   <!-- Modal: New Plan Generation -->
   <div id="modal-new-plan" class="modal-overlay hidden">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 600px;">
       <div class="modal-header">
-        <span>Generate New Roster Plan</span>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span>⚡ Generate New Roster Plan</span>
+          <span class="brand-badge" style="background:#2563eb;">Database Creation</span>
+        </div>
         <button class="btn btn-sm close-modal">&times;</button>
       </div>
       <div class="modal-body">
         <div style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 12px;font-size:11.5px;color:#1e40af;line-height:1.4;">
+            ℹ️ <b>Creates a new separate roster plan in the database.</b> If you only want to fill empty slots on your current open schedule, close this dialog and click <b>"Auto-Fill Remaining Slots"</b>.
+          </div>
+
           <label>
             <b>Plan Name:</b>
             <input type="text" id="new-plan-name" class="text-input" style="width: 100%;" value="November 2026 Roster">
           </label>
+
+          <!-- Department Scope Selector -->
+          <div style="background:#f8fafc;padding:10px;border-radius:6px;border:1px solid #e2e8f0;">
+            <span style="font-weight: 700; font-size: 12px; color: #334155; display: block; margin-bottom: 6px;">
+              🏢 Department Scope:
+            </span>
+            <div style="display:flex;gap:16px;align-items:center;margin-bottom:6px;">
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="radio" name="new-plan-dept-scope" value="all" checked id="new-plan-scope-all">
+                <b>All Departments</b> (Organization-Wide)
+              </label>
+              <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;">
+                <input type="radio" name="new-plan-dept-scope" value="custom" id="new-plan-scope-custom">
+                <b>Specific Department(s)</b> (Sub-Team)
+              </label>
+            </div>
+            <div id="new-plan-dept-checkboxes" class="hidden" style="display:flex;flex-wrap:wrap;gap:8px;padding:8px 10px;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;max-height:110px;overflow-y:auto;margin-top:6px;">
+              <!-- Populated dynamically with department checkboxes -->
+            </div>
+          </div>
+
           <div style="display: flex; gap: 10px;">
             <label style="flex: 1;">
               <b>Target Year:</b>
@@ -406,7 +439,7 @@
 
   <!-- Modal: Roster Management Hub -->
   <div id="modal-roster-hub" class="modal-overlay hidden">
-    <div class="modal-content" style="max-width: 860px;">
+    <div class="modal-content" style="max-width: 890px; width:95%;">
       <div class="modal-header">
         <div style="display:flex;align-items:center;gap:8px;">
           <span style="font-size:16px;">🗂️ Roster Management Hub</span>
@@ -417,10 +450,21 @@
       <div class="modal-body">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">
           <div>
-            <div style="font-size:13px;font-weight:600;color:#0f172a;">All Saved Workforce Rosters</div>
-            <div style="font-size:11px;color:var(--text-muted);">Switch active rosters, rename, duplicate, or delete unneeded plans.</div>
+            <div style="font-size:13px;font-weight:700;color:#0f172a;">All Saved Workforce Rosters</div>
+            <div style="font-size:11px;color:var(--text-muted);">Switch active rosters, rename, duplicate, or delete unneeded plans across departments.</div>
           </div>
           <button id="hub-create-plan-btn" class="btn btn-sm btn-hero-generate">⚡ + Generate New Roster</button>
+        </div>
+
+        <!-- Department Scope Filter Bar -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;background:#f8fafc;padding:8px 12px;border-radius:6px;border:1px solid #e2e8f0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:12px;font-weight:600;color:#334155;">Filter Rosters by Department Scope:</span>
+            <select id="hub-dept-filter" class="select-input select-sm" style="min-width:180px;font-weight:600;">
+              <option value="all">🏢 All Rosters</option>
+            </select>
+          </div>
+          <span style="font-size:11px;color:var(--text-muted);" id="hub-filter-status">Showing all rosters</span>
         </div>
 
         <div id="roster-hub-list" style="max-height: 440px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;">
@@ -491,7 +535,7 @@
       </div>
       <div class="modal-tabs">
         <button id="org-tab-depts" class="org-tab-btn active">Departments (<span id="org-dept-count">0</span>)</button>
-        <button id="org-tab-demand" class="org-tab-btn">Shift Staffing Demand 📋</button>
+        <button id="org-tab-demand" class="org-tab-btn">Shift Types & Staffing Demand 📋</button>
         <button id="org-tab-emps" class="org-tab-btn">Staff Directory (<span id="org-emp-count">0</span>)</button>
       </div>
       <div class="modal-body" style="padding: 14px;">
@@ -668,11 +712,86 @@
           </div>
         </div>
 
-        <!-- TAB 3: Shift Staffing Demand -->
+        <!-- TAB 3: Shift Types & Staffing Demand -->
         <div id="org-demand-view" class="hidden">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <!-- Sub-Section A: Shift Types & Dynamic Operating Hours -->
+          <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 14px;">
+            <div style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap:wrap; gap:6px;">
+              <div>
+                <span style="font-weight: 700; font-size: 13px; color: #1e293b;">⏰ Workplace Shift Definitions & Operating Hours</span>
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                  Define dynamic shift start and end times, duration hours, and mandatory rest windows. Changes automatically reflect across solver models.
+                </p>
+              </div>
+              <button id="show-add-shift-btn" class="btn btn-sm btn-primary">+ Add Custom Shift Type</button>
+            </div>
+
+            <!-- Add / Edit Shift Form Card -->
+            <div id="shift-form-card" class="crud-form-card hidden" style="background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;padding:12px;margin-bottom:12px;">
+              <h4 id="shift-form-title" style="margin-bottom: 8px;font-size:13px;color:#0f172a;">Create New Shift Type</h4>
+              <input type="hidden" id="shift-form-id">
+              <div style="display: grid; grid-template-columns: 1fr 2fr 1fr 1fr 1fr 1fr; gap: 8px; align-items: end;">
+                <label>
+                  <span class="form-label">Shift Code:</span>
+                  <input type="text" id="shift-form-code" class="text-input" placeholder="e.g. MORN" style="width: 100%;">
+                </label>
+                <label>
+                  <span class="form-label">Shift Name:</span>
+                  <input type="text" id="shift-form-name" class="text-input" placeholder="e.g. Morning Shift" style="width: 100%;">
+                </label>
+                <label>
+                  <span class="form-label">Start Time:</span>
+                  <input type="time" id="shift-form-start" class="text-input" value="07:00" style="width: 100%;">
+                </label>
+                <label>
+                  <span class="form-label">End Time:</span>
+                  <input type="time" id="shift-form-end" class="text-input" value="15:30" style="width: 100%;">
+                </label>
+                <label>
+                  <span class="form-label">Duration (Hrs):</span>
+                  <input type="number" id="shift-form-duration" class="text-input" step="0.5" value="8.5" style="width: 100%;">
+                </label>
+                <label>
+                  <span class="form-label">Rest After (Hrs):</span>
+                  <input type="number" id="shift-form-rest" class="text-input" value="14" style="width: 100%;">
+                </label>
+              </div>
+              <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; flex-wrap:wrap; gap:8px;">
+                <label style="display:flex; align-items:center; gap:6px; font-size:12px; cursor:pointer;">
+                  <input type="checkbox" id="shift-form-night"> <b>Is Night Shift (Mandates 24h rest before subsequent day shifts)</b>
+                </label>
+                <div style="display:flex; gap:8px;">
+                  <button id="cancel-shift-btn" class="btn btn-sm">Cancel</button>
+                  <button id="save-shift-btn" class="btn btn-sm btn-primary">Save Shift Type</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Shift Types List Table -->
+            <div style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: 6px; background:#fff;">
+              <table class="data-table" id="shift-types-table">
+                <thead>
+                  <tr>
+                    <th style="width: 80px;">Code</th>
+                    <th>Shift Name</th>
+                    <th>Operating Hours</th>
+                    <th>Duration</th>
+                    <th>Min Rest</th>
+                    <th>Type</th>
+                    <th style="text-align: right; width: 130px;">Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="shift-types-table-body">
+                  <!-- Dynamically populated -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Sub-Section B: Weekly Staffing Demand Requirements -->
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px;">
             <div style="display: flex; gap: 8px; align-items: center;">
-              <span style="font-weight: 600; font-size: 13px;">Target Department:</span>
+              <span style="font-weight: 700; font-size: 13px; color: #1e293b;">Department Staffing Demand:</span>
               <select id="demand-dept-select" class="select-input" style="font-weight: 600; min-width: 180px;">
                 <!-- Populated dynamically -->
               </select>
@@ -686,10 +805,10 @@
               <button id="save-demand-btn" class="btn btn-sm btn-primary">Save Demand Requirements</button>
             </div>
           </div>
-          <p style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 10px;">
+          <p style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 8px;">
             Specify the minimum number of staff needed for each shift on each day of the week. The CP-SAT solver uses these numbers to schedule workers to shifts.
           </p>
-          <div style="max-height: 380px; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px;">
+          <div style="max-height: 240px; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 6px;">
             <table class="data-table" id="demand-table">
               <thead>
                 <tr>
@@ -914,9 +1033,20 @@
             <div class="onboarding-badge" style="background: #f3e8ff; color: #6b21a8;">Instant Demo Dataset</div>
             <h4 style="margin: 8px 0 4px 0; font-size: 14px;">Explore Demo Hospital</h4>
             <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; flex: 1;">
-              Test drive the CP-SAT optimization engine with our realistic 4-department hospital scenario (ICU, ER, Surgical, Outpatient) and 32 cross-trained staff.
+              Test drive the CP-SAT optimization engine with our realistic 4-department hospital scenario (Transport, Operations, Support, Supply) and 32 cross-trained staff.
             </p>
             <button id="onboarding-btn-demo" class="btn btn-sm" style="width: 100%; margin-top: 12px; background: #ffffff; border-color: #9333ea; color: #9333ea; font-weight: 600;">Explore Demo Roster &rarr;</button>
+          </div>
+
+          <!-- Path 4: Department & Sub-Team Rosters -->
+          <div class="onboarding-card" id="onboarding-opt-dept-roster">
+            <div class="onboarding-icon" style="background: #e0f2fe; color: #0284c7;">🗂️</div>
+            <div class="onboarding-badge" style="background: #bae6fd; color: #0369a1;">Sub-Team Planning</div>
+            <h4 style="margin: 8px 0 4px 0; font-size: 14px;">Department Rosters</h4>
+            <p style="font-size: 11px; color: var(--text-muted); line-height: 1.4; flex: 1;">
+              Manage separate schedules for sub-departments or individual units within one company, allowing focused views, independent solve runs, and scoped exports.
+            </p>
+            <button id="onboarding-btn-dept-roster" class="btn btn-sm" style="width: 100%; margin-top: 12px; background: #ffffff; border-color: #0284c7; color: #0284c7; font-weight: 600;">Open Roster Hub &rarr;</button>
           </div>
 
         </div>

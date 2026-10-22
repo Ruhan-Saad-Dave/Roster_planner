@@ -37,6 +37,11 @@
    - [Interactive & Adjustable Employee Column Width](#72-interactive--adjustable-employee-column-width)
    - [Dedicated Roster Management Hub](#73-dedicated-roster-management-hub)
    - [Right Sidebar Inspector UI/UX Overhaul](#74-right-sidebar-inspector-uiux-overhaul)
+8. [Department-Scoped Multi-Rosters, Dynamic Operating Hours & Solver Disambiguation (v2.2)](#8-department-scoped-multi-rosters-dynamic-operating-hours--solver-disambiguation-v22)
+   - [Disambiguating Roster Creation vs Active Schedule Auto-Fill](#81-disambiguating-roster-creation-vs-active-schedule-auto-fill)
+   - [Department-Scoped Rosters in Roster Hub & Workspace](#82-department-scoped-rosters-in-roster-hub--workspace)
+   - [Workplace Shift Definitions & Dynamic Operating Hours](#83-workplace-shift-definitions--dynamic-operating-hours)
+   - [Setup Wizard Alignment & Onboarding Paths](#84-setup-wizard-alignment--onboarding-paths)
 
 ---
 
@@ -558,3 +563,80 @@ The right-hand shift inspector (`#inspector-panel`) was restructured into clean,
    - **Card 1: Quick Shift Actions**: 1-click grid buttons for `🏖️ DO (Day Off)`, `☕ COFF (Comp Off)`, `🗑️ Clear Cell`, and `📌 Pin / Unpin`.
    - **Card 2: Shift Assignment & Department Floating**: Dropdown selectors for Shift Code and Floating Department, equipped with real-time ergonomic rest checking and 1-click "✓ Apply & Validate Shift".
    - **Card 3: Ergonomic Rest Context**: Side-by-side cards displaying Day Prior and Day After scheduled shifts to prevent turnaround violations.
+
+
+---
+
+## 8. Department-Scoped Multi-Rosters, Dynamic Operating Hours & Solver Disambiguation (v2.2)
+
+### 8.1 Disambiguating Roster Creation vs Active Schedule Auto-Fill
+During manual workflow testing, managers experienced confusion between generating a completely new database roster plan versus automatically solving empty cells on their currently active schedule grid, occasionally resulting in unintentional duplicate plans.
+
+To resolve this ambiguity permanently:
+1. **Executive Top Header Redesign**:
+   - Transformed the top bar into a modern, executive cockpit layout:
+     - **Brand Logo & Text**: Distinctive gradient icon, title with subtitle, and active engine pill (`OR-Tools CP-SAT`).
+     - **Center Workspace Pill**: Displays active roster plan name, active scope pill (`🏢 All Departments` or specific department names), direct trigger for the Roster Management Hub (`🗂️ Rosters`), and prominent primary button (`⚡ + New Plan`).
+2. **Ribbon Action Disambiguation**:
+   - Separated the solver operations in Ribbon Tab 1 (`pane-schedule`):
+     - **Active Roster Solver Group**: Positioned first with high-contrast hero styling (`btn-hero-solve`) for `#solve-remaining-btn` (*"Auto-Fill Remaining Slots"*), complete with descriptive badge explaining that this fills blank cells on the active schedule without modifying pinned slots or creating duplicate plans.
+     - **Roster Lifecycle & Tools Group**: Clearly distinguished group housing `#new-plan-btn` (*"+ New Roster Plan"*), `#clear-canvas-btn`, `#award-compoff-btn`, and `#variants-btn`.
+3. **Modal Warning Guiding Callouts**:
+   - Both `#modal-gen-choice` and `#modal-new-plan` feature informative blue callout banners advising managers that clicking generate creates a separate database plan, and instructing them to close the dialog and use "Auto-Fill Remaining Slots" if they only want to complete the active schedule.
+
+---
+
+### 8.2 Department-Scoped Rosters in Roster Hub & Workspace
+In complex multi-department organizations or healthcare facilities, managers frequently need to generate independent rosters for individual departments or sub-teams (e.g. ICU vs Transport) rather than forcing an all-department monolithic schedule.
+
+#### Database Schema Enhancement
+- The `roster_plans` table now contains a dedicated `department_ids VARCHAR(256)` column.
+- NULL or empty string designates an organization-wide roster encompassing all active departments.
+- A comma-delimited string (e.g. `"1,2"`) binds the plan to the specified department IDs.
+
+#### Solver Scoping (`roster_service.py`)
+- `build_context_from_db(db, year, month, target_department_ids=...)`:
+  - When department IDs are specified, filters the department query strictly to the target departments.
+  - Queries staffing demand requirements exclusively for the selected departments.
+  - Filters the workforce to employees whose `primary_department_id` is within the target scope, plus any secondary floaters whose `secondary_department_ids` include one of the target departments.
+  - Generates conflict-free schedules optimized specifically for that department scope.
+- `get_plan_schedule(plan_id)`:
+  - Returns `department_ids` and a human-readable `scope_label` (e.g. `"ICU Only"` or `"ICU, Transport"`).
+  - Automatically filters the staff timeline to workers in that scope.
+
+#### Roster Hub Department Filtering
+- `#modal-roster-hub` includes an interactive Department Scope filter dropdown (`#hub-dept-filter`):
+  - `🏢 All Rosters`: Displays all plans regardless of scope.
+  - `🌐 All Departments (Org-Wide)`: Filters plans that cover the entire organization.
+  - Individual Department options: Displays plans scoped to that particular department.
+- Real-time filter status counter updates dynamically (e.g. `Showing 2 of 5 rosters`).
+- Every roster card prominently renders an active scope pill badge (`🏢 Transport Only`) indicating its organizational boundary.
+
+---
+
+### 8.3 Workplace Shift Definitions & Dynamic Operating Hours
+Previously, shifts had hardcoded operating hours and a stray artifact (`D1_COMMIT`) lingered in the database. Operating hours can now be defined dynamically per organization.
+
+1. **Database & Artifact Cleanup**:
+   - Removed stray artifact `D1_COMMIT` (ID: 4) and all orphaned requirements from `localroster.db`.
+2. **Workplace Shift Definitions Management (Org Manager Tab 2)**:
+   - **Section A: Dynamic Shift Definitions Table**:
+     - Lists all active and inactive shift types with their Shift Code, Name, Operating Hours, Duration, Mandatory Rest Hours, and Night Shift classification.
+     - Edit button populates the shift form for instant adjustments.
+     - Delete button safely verifies if assignments exist: if assignments are bound, it safely deactivates the shift (`is_active = False`) to prevent foreign key errors while keeping audit history intact.
+   - **Add / Edit Shift Type Form**:
+     - HTML5 time selectors (`<input type="time">`) for Start Time and End Time.
+     - Automatic duration calculation (`calcShiftDuration`), correctly computing cross-midnight shifts (e.g., 23:00 to 07:30 = 8.5h).
+     - Intelligent night-shift auto-detection when end time crosses midnight or start time is after 20:00.
+3. **Dynamic Staffing Demand Matrix**:
+   - The weekly demand matrix in Section B dynamically iterates over active shifts in `state.shifts` fetched from `/api/shift-types`, displaying live operating hours and duration next to each shift title.
+   - Dynamic regimes (Standard 3-Shift, Dynamic Hybrid 3Wk/2Wknd, and Lean 2-Shift) seamlessly adapt to the organization's active shift definitions.
+
+---
+
+### 8.4 Setup Wizard Alignment & Onboarding Paths
+The welcome onboarding wizard (`#modal-onboarding`) has been expanded to support modern department-scoped workflows:
+- **Path 1**: *Bulk Data Import* (Spreadsheet templates for Employees, Departments, Demands, Leaves).
+- **Path 2**: *Start from Scratch* (Direct access to Organization Manager to set up custom departments, dynamic shifts, and staff).
+- **Path 3**: *Explore Demo Dataset* (Hospital scenario with 4 departments and 32 cross-trained staff).
+- **Path 4 (New)**: *Department & Sub-Team Rosters* (Direct one-click launch into the Roster Management Hub to browse, filter, or create sub-team schedules).
