@@ -148,6 +148,11 @@ class LeaveRecordResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 # Solver & Plans
+class UpdatePlanRequest(BaseModel):
+    name: Optional[str] = None
+    status: Optional[str] = None
+    is_active_variant: Optional[bool] = None
+
 class GenerateRosterRequest(BaseModel):
     name: str = "Workforce Roster Plan"
     planning_year: Optional[int] = None

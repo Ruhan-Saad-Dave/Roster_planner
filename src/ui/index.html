@@ -25,6 +25,7 @@
     <div class="plan-header-selector">
       <span class="plan-header-label">ACTIVE ROSTER:</span>
       <select id="plan-select" class="select-input select-plan-styled"></select>
+      <button id="manage-rosters-btn" class="btn btn-sm btn-header-hub" title="Open Roster Hub to view all rosters, rename, duplicate, or delete">🗂️ Roster Hub</button>
     </div>
 
     <!-- Right Header Actions -->
@@ -59,13 +60,28 @@
         </div>
       </div>
       <div class="ribbon-group">
-        <span class="ribbon-group-title">Schedule Filters & Periods</span>
+        <span class="ribbon-group-title">Schedule Filters & View Horizon</span>
         <div class="ribbon-group-tools">
-          <select id="view-select" class="select-input">
+          <select id="view-select" class="select-input" title="Switch layout format">
             <option value="staff_centric">Staff-Centric View</option>
             <option value="slot_centric">Slot-Centric View</option>
             <option value="audit_scorecard">Workload Audit Scorecard</option>
           </select>
+          <div style="display:flex;align-items:center;gap:3px;" title="Filter visible days horizon (Full Month vs 1 Week vs Custom)">
+            <button id="prev-period-btn" class="btn btn-sm" title="Previous 7 days" style="padding:4px 8px;">◀</button>
+            <select id="duration-select" class="select-input select-sm" style="font-weight:600;min-width:145px;">
+              <option value="all" selected>📅 Full Month (All Days)</option>
+              <option value="week_1">Week 1 (Days 1–7)</option>
+              <option value="week_2">Week 2 (Days 8–14)</option>
+              <option value="week_3">Week 3 (Days 15–21)</option>
+              <option value="week_4">Week 4 (Days 22–28)</option>
+              <option value="week_5">Week 5 (Days 29–End)</option>
+              <option value="days_7">First 7 Days</option>
+              <option value="days_14">First 14 Days</option>
+            </select>
+            <button id="next-period-btn" class="btn btn-sm" title="Next 7 days" style="padding:4px 8px;">▶</button>
+          </div>
+          <span id="duration-indicator" class="brand-badge" style="background:#e0f2fe;color:#0369a1;font-size:10px;">Full Month</span>
           <button id="toggle-prev-month-btn" class="btn btn-sm" title="Show/Hide Previous Month Trailing Shifts">📅 Prev Month: OFF</button>
           <button id="mode-toggle-btn" class="btn btn-sm">Simple Mode</button>
         </div>
@@ -109,6 +125,22 @@
           <button id="toggle-sidebar-btn" class="btn btn-sm">Toggle Dept Sidebar</button>
           <button id="toggle-inspector-btn" class="btn btn-sm">Toggle Inspector</button>
           <button id="reset-widths-btn" class="btn btn-sm">Reset Sidebar Widths</button>
+        </div>
+      </div>
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Employee Column Width</span>
+        <div class="ribbon-group-tools" style="align-items:center;gap:6px;">
+          <button id="col-width-compact-btn" class="btn btn-sm" title="Set employee column width to 120px">Compact (120px)</button>
+          <button id="col-width-normal-btn" class="btn btn-sm" title="Set employee column width to 180px">Normal (180px)</button>
+          <button id="col-width-wide-btn" class="btn btn-sm" title="Set employee column width to 240px">Wide (240px)</button>
+          <input type="range" id="emp-col-slider" min="110" max="320" value="180" style="width:90px;" title="Drag slider to adjust employee column width smoothly">
+          <span id="col-width-val-display" style="font-size:11px;color:var(--text-muted);min-width:38px;">180px</span>
+        </div>
+      </div>
+      <div class="ribbon-group">
+        <span class="ribbon-group-title">Roster Operations</span>
+        <div class="ribbon-group-tools">
+          <button id="view-pane-roster-hub-btn" class="btn btn-sm btn-primary" title="Open Roster Hub to rename, duplicate, or delete rosters">🗂️ Manage Rosters Hub</button>
         </div>
       </div>
     </div>
@@ -165,23 +197,42 @@
     <!-- Right Conflict & Shift Inspector -->
     <aside class="inspector-panel" id="inspector-panel">
       <div class="sidebar-header-row">
-        <span class="sidebar-heading">Constraint Inspector</span>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <span style="font-size:16px;">🎯</span>
+          <span class="sidebar-heading" style="margin:0;">Shift & Cell Inspector</span>
+        </div>
         <button id="sidebar-right-collapse-btn" class="sidebar-collapse-icon-btn" title="Collapse inspector (▶)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 18l6-6-6-6"/></svg>
         </button>
       </div>
-      <div id="inspector-content">
-        <p style="color: var(--text-muted); font-size: 12px;">Click any shift cell to inspect rules, rest intervals, or reassign manually.</p>
+
+      <!-- Live Context Bar -->
+      <div id="inspector-context-pill" class="inspector-context-pill">
+        <span id="inspector-context-text">💡 No cell selected • Click any cell</span>
+        <button id="inspector-clear-sel-btn" class="btn btn-sm hidden" style="padding:1px 6px;font-size:10px;" title="Deselect cell">✕ Clear</button>
       </div>
+
+      <!-- Main Dynamic Content (Idle Guide OR Active Cell Editor) -->
+      <div id="inspector-content">
+        <!-- Rendered by renderSidebarIdleState() or selectAssignment() -->
+      </div>
+
+      <!-- Conflict Notification Box -->
       <div id="inspector-conflict-alert" class="alert-card danger hidden" style="margin-top: 8px;">
         <!-- Dynamically rendered conflict message -->
       </div>
-      <div id="inspector-actions" class="hidden" style="display: flex; flex-direction: column; gap: 8px;">
-        <div style="font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; margin-top: 6px;">Cell Status Controls</div>
-        <button id="inspector-empty-btn" class="btn btn-sm" style="background:#f1f5f9;color:#334155;border-color:#cbd5e1;" title="Empty this cell so the CP-SAT solver algorithm fills it">🗑️ Set as Empty (Fillable by Solver)</button>
-        <button id="inspector-dayoff-btn" class="btn btn-sm" style="background:#e2e8f0;color:#1e293b;border-color:#94a3b8;" title="Pin as Day OFF - Solver will strictly NOT schedule this employee">📌 Pin as Day OFF (DO)</button>
-        <button id="inspector-compoff-btn" class="btn btn-sm" style="background:#fef3c7;color:#92400e;border-color:#fde68a;" title="Pin as Compensatory Off - Solver will strictly NOT schedule this employee">☕ Pin as Comp Off (Coff)</button>
-        <button id="inspector-pin-btn" class="btn btn-sm" title="Lock the current assigned shift in place">Pin Current Shift 📌</button>
+
+      <!-- Quick Action Controls Container -->
+      <div id="inspector-actions" class="hidden">
+        <div class="inspector-card-title" style="margin-top:6px;">
+          <span>⚡ Cell Status Controls</span>
+        </div>
+        <div class="quick-action-grid">
+          <button id="inspector-empty-btn" class="action-pill-btn action-pill-empty" title="Set this cell as empty so solver fills it">🗑️ Set Empty</button>
+          <button id="inspector-dayoff-btn" class="action-pill-btn action-pill-do" title="Pin as Day OFF (DO)">📌 Pin Day Off</button>
+          <button id="inspector-compoff-btn" class="action-pill-btn action-pill-coff" title="Pin as Compensatory Off (COFF)">☕ Pin Comp Off</button>
+          <button id="inspector-pin-btn" class="action-pill-btn action-pill-pin" title="Lock current shift in place">📌 Pin Current</button>
+        </div>
       </div>
     </aside>
   </div>
@@ -297,14 +348,44 @@
             <label style="flex: 1;">
               <b>Target Month:</b>
               <select id="new-plan-month" class="select-input" style="width: 100%;">
-                <option value="1">January</option>
-                <option value="2">February</option>
-                <option value="11" selected>November</option>
-                <option value="12">December</option>
+                <option value="1">1 - January</option>
+                <option value="2">2 - February</option>
+                <option value="3">3 - March</option>
+                <option value="4">4 - April</option>
+                <option value="5">5 - May</option>
+                <option value="6">6 - June</option>
+                <option value="7">7 - July</option>
+                <option value="8">8 - August</option>
+                <option value="9">9 - September</option>
+                <option value="10">10 - October</option>
+                <option value="11" selected>11 - November</option>
+                <option value="12">12 - December</option>
               </select>
             </label>
           </div>
-          <div id="calendar-preview" style="padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 11px; color: var(--text-muted);">
+
+          <label>
+            <b>Roster Horizon / Duration:</b>
+            <select id="new-plan-duration" class="select-input" style="width: 100%;">
+              <option value="full_month" selected>Full Calendar Month (All Days)</option>
+              <option value="1_week">1 Week (First 7 Days)</option>
+              <option value="2_weeks">2 Weeks (First 14 Days)</option>
+              <option value="custom">Custom Date Range (Specify Dates)</option>
+            </select>
+          </label>
+
+          <div id="new-plan-custom-range" class="hidden" style="display:flex;gap:10px;">
+            <label style="flex:1;">
+              <b>Start Date:</b>
+              <input type="date" id="new-plan-custom-start" class="text-input" style="width:100%;">
+            </label>
+            <label style="flex:1;">
+              <b>End Date:</b>
+              <input type="date" id="new-plan-custom-end" class="text-input" style="width:100%;">
+            </label>
+          </div>
+
+          <div id="calendar-preview" style="padding: 8px; background: #f8fafc; border-radius: 6px; font-size: 11px; color: var(--text-muted); border: 1px solid #e2e8f0;">
             Horizon: Nov 01, 2026 to Nov 30, 2026 (30 days, 8 weekend days).
           </div>
           <label>
@@ -319,6 +400,36 @@
       <div class="modal-footer">
         <button class="btn close-modal">Cancel</button>
         <button id="confirm-generate-btn" class="btn btn-primary">Start CP-SAT Solve</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Roster Management Hub -->
+  <div id="modal-roster-hub" class="modal-overlay hidden">
+    <div class="modal-content" style="max-width: 860px;">
+      <div class="modal-header">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:16px;">🗂️ Roster Management Hub</span>
+          <span class="brand-badge" style="background:#e0f2fe;color:#0369a1;" id="hub-plans-count">0 Rosters</span>
+        </div>
+        <button class="btn btn-sm close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#0f172a;">All Saved Workforce Rosters</div>
+            <div style="font-size:11px;color:var(--text-muted);">Switch active rosters, rename, duplicate, or delete unneeded plans.</div>
+          </div>
+          <button id="hub-create-plan-btn" class="btn btn-sm btn-hero-generate">⚡ + Generate New Roster</button>
+        </div>
+
+        <div id="roster-hub-list" style="max-height: 440px; overflow-y: auto; display:flex; flex-direction:column; gap:8px;">
+          <!-- Dynamically populated by renderRosterHub() -->
+        </div>
+      </div>
+      <div class="modal-footer" style="display:flex;justify-content:space-between;align-items:center;">
+        <span style="font-size:11px;color:var(--text-muted);">💡 Click 'Set Active' to load that roster into your spreadsheet workspace.</span>
+        <button class="btn close-modal">Close</button>
       </div>
     </div>
   </div>

@@ -32,6 +32,11 @@
    - [Verification Matrix Across Test Modules](#52-verification-matrix-across-test-modules)
    - [Verification Commands & Independent Validation](#53-verification-commands--independent-validation)
 6. [Version Control Cleanliness & Git Discipline (R5)](#6-version-control-cleanliness--git-discipline-r5)
+7. [Operational Horizon, Dynamic Grid & Workspace Overhaul (v2.1)](#7-operational-horizon-dynamic-grid--workspace-overhaul-v21)
+   - [Dynamic Roster Horizon & Visible Period Filtering](#71-dynamic-roster-horizon--visible-period-filtering)
+   - [Interactive & Adjustable Employee Column Width](#72-interactive--adjustable-employee-column-width)
+   - [Dedicated Roster Management Hub](#73-dedicated-roster-management-hub)
+   - [Right Sidebar Inspector UI/UX Overhaul](#74-right-sidebar-inspector-uiux-overhaul)
 
 ---
 
@@ -475,3 +480,81 @@ All project deliverables are committed to git using conventional semantic commit
 3. `fix(services): implement pre-solve pinned shift sanitization, database persistence, and bidirectional comp-off streaks`
 4. `test(simulation): add CP-SAT multi-topology simulation suite and pytest configuration`
 5. `docs: add comprehensive LocalRoster v2 feature guide and clean git bytecode index`
+6. `feat(roster): implement visible horizon controls, dynamic employee column resizer, roster hub, and inspector overhaul`
+
+---
+
+## 7. Operational Horizon, Dynamic Grid & Workspace Overhaul (v2.1)
+
+### 7.1 Dynamic Roster Horizon & Visible Period Filtering
+Managers routinely operate across differing planning horizons—from 7-day tactical shifts to full 30/31-day strategic monthly rosters. Previously, the grid forced a full-month view or appeared truncated on compact displays.
+
+#### Frontend Horizon Filtering
+- **Period Dropdown (`#duration-select`)**:
+  - `Full Month (All Days)`: Renders all calendar days in the planning horizon.
+  - `Week 1` through `Week 5`: Dynamically segments the calendar into 7-day windows (Days 1–7, 8–14, 15–21, 22–28, 29–End).
+  - `First 7 Days` and `First 14 Days`: Rapid preset horizons for weekly sprint planning.
+- **Horizon Steppers (`◀`, `▶`)**: One-click stepping through consecutive weeks without opening dropdown menus.
+- **Horizon Indicator Badge (`#duration-indicator`)**: Real-time feedback displaying the active date range (e.g. `Days 1–7 (7 Days)`).
+
+#### CP-SAT Horizon Generation
+The solver API (`POST /api/roster/generate`) accepts explicit `start_date` and `end_date` parameters alongside `planning_year` and `planning_month`. When configured for 1-week, 2-week, or custom durations in the **Generate Roster Modal**, CP-SAT strictly optimizes and binds assignments within the targeted date window, reporting exact `horizon_days` metadata in the Roster Hub.
+
+---
+
+### 7.2 Interactive & Adjustable Employee Column Width
+To optimize viewing density across varied laptop, desktop, and multi-monitor setups, the staff column width is now fully customizable:
+
+1. **Direct Drag-to-Resize Handle**:
+   - An interactive splitter (`.emp-col-resizer`) is positioned on the right boundary of the sticky employee header cell.
+   - Dragging adjusts the CSS custom property `--emp-col-width` in real-time between 110px and 320px with smooth document-level mouse tracking.
+2. **Ribbon View Presets & Slider**:
+   - Located under **Ribbon Tab 4 (View Options)**:
+     - `Compact (120px)`: Minimizes name column to view more calendar days horizontally.
+     - `Normal (180px)`: Standard balanced layout.
+     - `Wide (240px)`: Accommodates long employee names, titles, and department tags without truncation.
+     - `Range Slider (110px–320px)`: Fine-grained precision width slider with real-time numeric readout.
+3. **Local Persistence**: Column width preferences persist across browser reloads via `localStorage` key `localroster_emp_col_width`.
+
+---
+
+### 7.3 Dedicated Roster Management Hub
+To eliminate confusion surrounding the top header dropdown and empower managers to manage, duplicate, and clean up schedules, a dedicated **Roster Management Hub** modal (`#modal-roster-hub`) was introduced:
+
+```
++----------------------------------------------------------------------------------------------------+
+| 🗂️ Roster Management Hub                                            [ 3 Rosters ]            [X]  |
++----------------------------------------------------------------------------------------------------+
+| All Saved Workforce Rosters                                         [ ⚡ + Generate New Roster ]   |
+| Switch active rosters, rename, duplicate, or delete unneeded plans.                                 |
++----------------------------------------------------------------------------------------------------+
+|  November 2026 Roster  [✓ ACTIVE IN WORKSPACE]                                                     |
+|  [SOLVED] • 📅 Horizon: 30 Days • 👥 120 Shift Assignments • Created: 10/22/2026                    |
+|  [ Active ]  [ ✏️ Rename ]  [ 📋 Duplicate ]  [ 🗑️ Delete ]                                        |
++----------------------------------------------------------------------------------------------------+
+|  Copy of November 2026 Roster  [Variant]                                                            |
+|  [DRAFT] • 📅 Horizon: 30 Days • 👥 120 Shift Assignments • Created: 10/22/2026                     |
+|  [ ✓ Set Active ]  [ ✏️ Rename ]  [ 📋 Duplicate ]  [ 🗑️ Delete ]                                  |
++----------------------------------------------------------------------------------------------------+
+```
+
+#### API Endpoints Supporting Roster Hub
+- `GET /api/roster/plans`: Augmented to return `horizon_days` and `assignments_count` for each plan.
+- `PATCH /api/roster/{plan_id}`: Allows renaming plan titles, changing status (`DRAFT`, `SOLVED`, `PUBLISHED`), and promoting active variants.
+- `POST /api/roster/{plan_id}/duplicate`: Clones the entire roster plan, including all shift assignments, pinned statuses, and deficit logs under a new session ID for what-if scenario testing.
+- `DELETE /api/roster/{plan_id}`: Unbinds child variants and cascades deletion of all associated assignments and deficit logs.
+
+---
+
+### 7.4 Right Sidebar Inspector UI/UX Overhaul
+The right-hand shift inspector (`#inspector-panel`) was restructured into clean, intuitive cards that provide rich operational context whether a cell is selected or not:
+
+1. **Idle State (No Cell Selected)**:
+   - Displays live roster metrics: Total Shift Assignments, Active Staff Count, and Detected Labor Conflicts.
+   - Shift color legend chips with quick visual references for Morning, Evening, Night, Day Off, and Comp Off.
+   - "Pro Tips for Managers" card with guidance on prefill mode, pinning, and solving blank slots.
+2. **Active Cell State (Cell Selected)**:
+   - **Header Context Pill**: Shows Employee Name, Department Dot, and Formatted Calendar Date.
+   - **Card 1: Quick Shift Actions**: 1-click grid buttons for `🏖️ DO (Day Off)`, `☕ COFF (Comp Off)`, `🗑️ Clear Cell`, and `📌 Pin / Unpin`.
+   - **Card 2: Shift Assignment & Department Floating**: Dropdown selectors for Shift Code and Floating Department, equipped with real-time ergonomic rest checking and 1-click "✓ Apply & Validate Shift".
+   - **Card 3: Ergonomic Rest Context**: Side-by-side cards displaying Day Prior and Day After scheduled shifts to prevent turnaround violations.

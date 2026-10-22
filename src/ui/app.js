@@ -8,6 +8,8 @@ const state = {
   activeDepartmentId: null,
   currentView: "staff_centric",
   currentMode: "simple",
+  visiblePeriod: "all",
+  empColWidth: parseInt(localStorage.getItem("localroster_emp_col_width")) || 180,
   prefillMode: false,
   showPrevMonth: false,
   zoomLevel: 1.0,
@@ -57,6 +59,21 @@ async function apiPut(endpoint, data) {
   return await res.json();
 }
 
+async function apiPatch(endpoint, data) {
+  const res = await fetch(endpoint, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data)
+  });
+  if (!res.ok) {
+    const errText = await res.text();
+    let msg = errText;
+    try { msg = JSON.parse(errText).detail || errText; } catch (_) {}
+    throw new Error(msg);
+  }
+  return await res.json();
+}
+
 async function apiDelete(endpoint) {
   const res = await fetch(endpoint, {
     method: "DELETE"
@@ -77,6 +94,7 @@ async function initApp() {
   // 1. Initialize all interactive UI widgets & event listeners immediately
   initRibbonTabs();
   initResizers();
+  initEmpColResizer();
   initZoom();
   initOnboarding();
   initFindReplace();
@@ -113,7 +131,10 @@ async function loadPlans() {
     select.appendChild(opt);
   });
 
-  state.activePlanId = state.plans[0].id;
+  if (!state.activePlanId || !state.plans.some(p => p.id === state.activePlanId)) {
+    state.activePlanId = state.plans[0].id;
+  }
+  select.value = state.activePlanId;
   await loadSchedule();
 }
 
@@ -162,6 +183,10 @@ async function loadSchedule() {
   }
 
   renderDeptFilters();
+
+  if (!state.selectedCell) {
+    renderSidebarIdleState();
+  }
 
   // Update footer status bar
   const curPlan = state.plans.find(p => p.id === state.activePlanId);
@@ -299,10 +324,39 @@ function renderDeptFilters() {
   });
 }
 
+function getVisibleDates(allDates) {
+  if (!allDates || allDates.length === 0) return [];
+  const period = state.visiblePeriod || "all";
+  if (period === "all") return allDates;
+  if (period === "week_1") return allDates.slice(0, 7);
+  if (period === "week_2") return allDates.slice(7, 14);
+  if (period === "week_3") return allDates.slice(14, 21);
+  if (period === "week_4") return allDates.slice(21, 28);
+  if (period === "week_5") return allDates.slice(28);
+  if (period === "days_7") return allDates.slice(0, 7);
+  if (period === "days_14") return allDates.slice(0, 14);
+  return allDates;
+}
+
 function renderStaffCentric(data) {
   const table = document.getElementById("schedule-table");
   table.innerHTML = "";
   table.style.zoom = state.zoomLevel;
+
+  const visibleDates = getVisibleDates(data.dates || []);
+
+  const durInd = document.getElementById("duration-indicator");
+  if (durInd) {
+    if (visibleDates.length === (data.dates || []).length) {
+      durInd.textContent = `Full Month (${visibleDates.length} Days)`;
+    } else {
+      const startNum = visibleDates[0] ? visibleDates[0].split("-")[2] : 1;
+      const endNum = visibleDates[visibleDates.length - 1] ? visibleDates[visibleDates.length - 1].split("-")[2] : visibleDates.length;
+      durInd.textContent = `Days ${parseInt(startNum)}–${parseInt(endNum)} (${visibleDates.length} Days)`;
+    }
+  }
+
+  table.style.setProperty("--emp-col-width", `${state.empColWidth || 180}px`);
 
   // Thead
   const thead = document.createElement("thead");
@@ -310,7 +364,16 @@ function renderStaffCentric(data) {
 
   const empTh = document.createElement("th");
   empTh.className = "sticky-col";
-  empTh.textContent = "Employee";
+  empTh.style.width = `${state.empColWidth || 180}px`;
+  empTh.style.minWidth = `${state.empColWidth || 180}px`;
+  empTh.style.maxWidth = `${state.empColWidth || 180}px`;
+  empTh.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding-right:8px;">
+      <span>Employee</span>
+      <span style="font-size:10px;color:var(--text-muted);font-weight:400;" id="emp-col-width-label">${state.empColWidth || 180}px</span>
+    </div>
+    <div class="emp-col-resizer" id="emp-col-resizer" title="Drag to adjust column width"></div>
+  `;
   headerRow.appendChild(empTh);
 
   const hasPrevTrailing = state.showPrevMonth && data.previous_month_context && data.previous_month_context.trailing_dates;
@@ -325,7 +388,7 @@ function renderStaffCentric(data) {
     });
   }
 
-  data.dates.forEach(dStr => {
+  visibleDates.forEach(dStr => {
     const th = document.createElement("th");
     const d = new Date(dStr + "T00:00:00");
     const dayName = d.toLocaleDateString("en-US", { weekday: "short" });
@@ -364,6 +427,9 @@ function renderStaffCentric(data) {
 
     const empTd = document.createElement("td");
     empTd.className = "sticky-col";
+    empTd.style.width = `${state.empColWidth || 180}px`;
+    empTd.style.minWidth = `${state.empColWidth || 180}px`;
+    empTd.style.maxWidth = `${state.empColWidth || 180}px`;
     const deptColor = r.primary_department_color || "#3b82f6";
 
     let prevMonthLabel = "";
@@ -374,11 +440,11 @@ function renderStaffCentric(data) {
     empTd.innerHTML = `
       <div class="emp-sticky-card emp-clickable" style="border-left-color: ${deptColor};" title="Click to view & edit employee details">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:6px;">
-          <b>${r.employee_name}</b>
-          <span class="dept-badge-tag" style="background:${deptColor};">${r.primary_department_code}</span>
+          <b class="emp-name-truncate" title="${r.employee_name}">${r.employee_name}</b>
+          <span class="dept-badge-tag" style="background:${deptColor};flex-shrink:0;">${r.primary_department_code}</span>
         </div>
         <div style="font-size:10px;color:var(--text-muted);display:flex;gap:6px;margin-top:2px;align-items:center;">
-          <span>${r.employee_code}</span>
+          <span style="flex-shrink:0;">${r.employee_code}</span>
           ${prevMonthLabel}
           <span style="margin-left:auto;font-size:10px;color:#3b82f6;" title="Edit employee">✏️</span>
         </div>
@@ -416,7 +482,7 @@ function renderStaffCentric(data) {
     // Check for turnaround warning from last day of previous month
     const workedPriorNight = r.previous_month_summary && r.previous_month_summary.last_day_shift && r.previous_month_summary.last_day_shift.includes("NIGHT");
 
-    data.dates.forEach((dStr, dIdx) => {
+    visibleDates.forEach((dStr, dIdx) => {
       const td = document.createElement("td");
       td.dataset.row = rIdx;
       td.dataset.col = dIdx;
@@ -536,6 +602,9 @@ function renderSlotCentric(data) {
   table.innerHTML = "";
   table.style.zoom = state.zoomLevel;
 
+  const visibleDates = getVisibleDates(data.dates || []);
+  const visibleSlots = (data.slots || []).filter(slot => visibleDates.length === 0 || visibleDates.includes(slot.date));
+
   const thead = document.createElement("thead");
   thead.innerHTML = `
     <tr>
@@ -550,7 +619,7 @@ function renderSlotCentric(data) {
   table.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  data.slots.forEach(slot => {
+  visibleSlots.forEach(slot => {
     const tr = document.createElement("tr");
     const isDeficit = slot.deficit > 0;
 
@@ -1213,6 +1282,42 @@ const BUTTON_EXPLANATIONS = {
     title: "🗑️ Clear Canvas (Reset)",
     desc: "Clears all shifts and resets all cells back to empty (—) so you can start fresh or rebuild from scratch.",
   },
+  "manage-rosters-btn": {
+    title: "🗂️ Roster Management Hub",
+    desc: "Open a dedicated short-view manager to rename, duplicate, switch, or delete rosters.",
+  },
+  "view-pane-roster-hub-btn": {
+    title: "🗂️ Manage Rosters Hub",
+    desc: "Open the roster manager to view metadata, rename, duplicate, or delete rosters.",
+  },
+  "duration-select": {
+    title: "📅 Visible Horizon Filter",
+    desc: "Adjust how many days of the roster are displayed (Full Month, specific weeks, or 7/14 days).",
+  },
+  "prev-period-btn": {
+    title: "◀ Previous Horizon Window",
+    desc: "Move visible display to the previous week or period.",
+  },
+  "next-period-btn": {
+    title: "▶ Next Horizon Window",
+    desc: "Move visible display to the next week or period.",
+  },
+  "col-width-compact-btn": {
+    title: "Compact Staff Column (120px)",
+    desc: "Shrinks the employee column to 120px so you can see more calendar days across your monitor.",
+  },
+  "col-width-normal-btn": {
+    title: "Normal Staff Column (180px)",
+    desc: "Sets employee column width to standard 180px.",
+  },
+  "col-width-wide-btn": {
+    title: "Wide Staff Column (240px)",
+    desc: "Expands the employee column to 240px for longer names and roles.",
+  },
+  "emp-col-slider": {
+    title: "Staff Column Width Slider",
+    desc: "Drag smoothly to customize employee name column width between 110px and 320px.",
+  },
   "toggle-prev-month-btn": {
     title: "📅 Previous Month Context",
     desc: "Toggles trailing 3 days and worked hours from the prior month to prevent turnaround violations on day 1.",
@@ -1465,6 +1570,106 @@ function initButtonTooltips() {
   });
 }
 
+function escapeHtml(str) {
+  if (!str) return "";
+  return str.replace(/'/g, "\\'").replace(/"/g, "&quot;");
+}
+
+function renderSidebarIdleState() {
+  const content = document.getElementById("inspector-content");
+  const actions = document.getElementById("inspector-actions");
+  const ctxText = document.getElementById("inspector-context-text");
+  const clearBtn = document.getElementById("inspector-clear-sel-btn");
+  const alertBox = document.getElementById("inspector-conflict-alert");
+
+  if (actions) actions.classList.add("hidden");
+  if (clearBtn) clearBtn.classList.add("hidden");
+  if (alertBox) alertBox.classList.add("hidden");
+  if (ctxText) ctxText.textContent = "💡 No cell selected • Click any cell";
+
+  updateGridCrosshairs(null, null, null);
+
+  if (!content) return;
+
+  const curPlan = state.plans.find(p => p.id === state.activePlanId);
+  const data = state.currentScheduleData;
+  const staffCount = data && data.rows ? data.rows.length : (state.departments ? state.departments.length : 0);
+  const planName = curPlan ? curPlan.name : "Active Roster";
+  const planStatus = curPlan ? curPlan.status : "READY";
+  const horizonText = curPlan ? `${curPlan.start_date} to ${curPlan.end_date}` : "Current Month";
+
+  let totalAssigned = 0;
+  let totalConflicts = 0;
+  if (data && data.rows) {
+    data.rows.forEach(r => {
+      Object.values(r.assignments || {}).forEach(a => {
+        if (a && a.shift_code && !a.is_day_off && !a.is_comp_off) totalAssigned++;
+        if (a && a.has_conflict) totalConflicts++;
+      });
+    });
+  }
+
+  content.innerHTML = `
+    <!-- Roster Overview Card -->
+    <div class="inspector-card">
+      <div class="inspector-card-title">
+        <span>📊 Roster Overview</span>
+        <span class="brand-badge" style="background:#10b981;color:#fff;">${planStatus}</span>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:#0f172a;margin-bottom:2px;">${planName}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">📅 Horizon: ${horizonText}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">
+        <div style="background:#fff;padding:6px;border-radius:4px;border:1px solid #e2e8f0;">
+          <div style="color:var(--text-muted);">Staff Members</div>
+          <div style="font-size:13px;font-weight:700;color:#0f172a;">${staffCount}</div>
+        </div>
+        <div style="background:#fff;padding:6px;border-radius:4px;border:1px solid #e2e8f0;">
+          <div style="color:var(--text-muted);">Assigned Shifts</div>
+          <div style="font-size:13px;font-weight:700;color:#2563eb;">${totalAssigned}</div>
+        </div>
+      </div>
+      ${totalConflicts > 0 ? `
+        <div style="margin-top:8px;padding:6px 8px;background:#fef2f2;border-radius:4px;border:1px solid #fecaca;color:#991b1b;font-size:11px;display:flex;align-items:center;justify-content:space-between;">
+          <span>⚠️ <b>${totalConflicts}</b> Ergonomic Conflicts</span>
+          <button class="btn btn-sm btn-accent" style="padding:2px 6px;font-size:10px;" onclick="window.autoResolveLaborConflicts && window.autoResolveLaborConflicts()">Auto-Fix</button>
+        </div>
+      ` : `
+        <div style="margin-top:8px;padding:6px 8px;background:#f0fdf4;border-radius:4px;border:1px solid #bbf7d0;color:#166534;font-size:11px;">
+          ✓ All scheduled rest intervals compliant.
+        </div>
+      `}
+    </div>
+
+    <!-- Quick Shift Legend -->
+    <div class="inspector-card">
+      <div class="inspector-card-title">
+        <span>🏷️ Shift Legend</span>
+      </div>
+      <div class="legend-grid">
+        <div class="legend-chip"><span class="shift-badge shift-morn" style="min-width:32px;font-size:9px;">MORN</span> Morning</div>
+        <div class="legend-chip"><span class="shift-badge shift-eve" style="min-width:32px;font-size:9px;">EVE</span> Evening</div>
+        <div class="legend-chip"><span class="shift-badge shift-night" style="min-width:32px;font-size:9px;">NIGHT</span> Night</div>
+        <div class="legend-chip"><span class="shift-badge shift-do" style="min-width:32px;font-size:9px;">DO</span> Day Off</div>
+        <div class="legend-chip"><span class="shift-badge shift-coff" style="min-width:32px;font-size:9px;">COFF</span> Comp Off</div>
+        <div class="legend-chip"><span class="shift-badge shift-vac" style="min-width:32px;font-size:9px;">VAC</span> Vacation</div>
+      </div>
+    </div>
+
+    <!-- Interactive Navigation Tips -->
+    <div class="inspector-card">
+      <div class="inspector-card-title">
+        <span>💡 Helpful Controls</span>
+      </div>
+      <ul style="margin:0;padding-left:16px;font-size:11px;color:#475569;line-height:1.5;">
+        <li><b>Click any cell</b> to assign shifts, toggle locks, or pin days off.</li>
+        <li><b>Drag column border</b> beside employee names to adjust width.</li>
+        <li><b>Select 'Week 1-5'</b> from top dropdown to focus on 7 days at a time.</li>
+        <li><b>Click '🗂️ Roster Hub'</b> at the top to rename, duplicate, or delete rosters.</li>
+      </ul>
+    </div>
+  `;
+}
+
 async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, colIdx = null, td = null) {
   hideCellHover();
   state.selectedCell = { emp, dateStr, currentAssignment, rowIdx, colIdx, td };
@@ -1478,64 +1683,130 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
 
   const content = document.getElementById("inspector-content");
   const actions = document.getElementById("inspector-actions");
-  actions.classList.remove("hidden");
+  const ctxText = document.getElementById("inspector-context-text");
+  const clearBtn = document.getElementById("inspector-clear-sel-btn");
+
+  if (ctxText) ctxText.textContent = `${emp.employee_name} • ${dateStr}`;
+  if (clearBtn) {
+    clearBtn.classList.remove("hidden");
+    clearBtn.onclick = () => {
+      state.selectedCell = null;
+      renderSidebarIdleState();
+    };
+  }
+  if (actions) actions.classList.remove("hidden");
 
   // Conflict Alert box
   const conflictAlert = document.getElementById("inspector-conflict-alert");
   if (conflictAlert) {
     if (currentAssignment && currentAssignment.has_conflict) {
       conflictAlert.classList.remove("hidden");
-      conflictAlert.innerHTML = `<b>⚠️ Rule Conflict:</b><br>${currentAssignment.conflict_reason || "Ergonomic labor rule violation"}`;
+      conflictAlert.innerHTML = `
+        <div style="font-weight:700;margin-bottom:2px;">⚠️ Ergonomic Conflict:</div>
+        <div>${currentAssignment.conflict_reason || "Ergonomic labor rule violation"}</div>
+      `;
     } else {
       conflictAlert.classList.add("hidden");
     }
   }
 
-  let shiftSelectorHtml = `<select id="target-shift-select" class="select-input" style="width:100%;margin-top:6px;">`;
+  // Format Date Nicely
+  let formattedDate = dateStr;
+  try {
+    const dObj = new Date(dateStr + "T00:00:00");
+    formattedDate = dObj.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" });
+  } catch (_) {}
+
+  // Shift & Dept Dropdowns
+  let shiftSelectorHtml = `<select id="target-shift-select" class="select-input" style="width:100%;margin-top:4px;">`;
   state.shifts.forEach(s => {
     const isSel = currentAssignment && currentAssignment.shift_id === s.id;
-    shiftSelectorHtml += `<option value="${s.id}" ${isSel ? "selected" : ""}>${s.name} (${s.code})</option>`;
+    shiftSelectorHtml += `<option value="${s.id}" ${isSel ? "selected" : ""}>${s.name} (${s.code} • ${s.start_time.slice(0,5)}-${s.end_time.slice(0,5)})</option>`;
   });
   shiftSelectorHtml += `</select>`;
 
-  let deptSelectorHtml = `<select id="target-dept-select" class="select-input" style="width:100%;margin-top:6px;">`;
+  let deptSelectorHtml = `<select id="target-dept-select" class="select-input" style="width:100%;margin-top:4px;">`;
   state.departments.forEach(d => {
     const isSel = currentAssignment ? currentAssignment.department_id === d.id : d.id === emp.primary_department_id;
-    deptSelectorHtml += `<option value="${d.id}" ${isSel ? "selected" : ""}>${d.name}</option>`;
+    const isHome = d.id === emp.primary_department_id;
+    deptSelectorHtml += `<option value="${d.id}" ${isSel ? "selected" : ""}>${d.name} (${d.code}) ${isHome ? '• Home' : '• Float'}</option>`;
   });
   deptSelectorHtml += `</select>`;
 
-  let statusHtml = "";
+  // Current status badge
+  let statusBadgeHtml = "";
   if (currentAssignment && currentAssignment.is_comp_off) {
     const earnedNote = currentAssignment.is_earned_coff ? ` (Earned Overtime Holiday for ${currentAssignment.earned_hours || '40+'}h worked)` : "";
-    statusHtml = `<div class="brand-badge" style="background:#fef3c7;color:#92400e;margin-top:6px;display:inline-block;">☕ Compensatory Off: ${currentAssignment.shift_name || 'Earned Holiday'}${earnedNote}</div>`;
+    statusBadgeHtml = `<span class="brand-badge" style="background:#fef3c7;color:#92400e;">☕ Comp Off: ${currentAssignment.shift_name || 'COFF'}${earnedNote}</span>`;
   } else if (currentAssignment && currentAssignment.is_day_off) {
-    statusHtml = `<div class="brand-badge" style="background:#e2e8f0;color:#1e293b;margin-top:6px;display:inline-block;">📌 Pinned Day OFF (Locked)</div>`;
+    statusBadgeHtml = `<span class="brand-badge" style="background:#e2e8f0;color:#1e293b;">📌 Pinned Day OFF (DO)</span>`;
   } else if (currentAssignment && currentAssignment.is_leave) {
-    statusHtml = `<div class="brand-badge" style="background:#f3e8ff;color:#6b21a8;margin-top:6px;display:inline-block;">Approved Leave: ${currentAssignment.shift_name}</div>`;
+    statusBadgeHtml = `<span class="brand-badge" style="background:#f3e8ff;color:#6b21a8;">🏖️ Approved Leave: ${currentAssignment.shift_name}</span>`;
   } else if (currentAssignment && currentAssignment.is_fixed_off) {
-    statusHtml = `<div class="brand-badge" style="background:#f1f5f9;color:#475569;margin-top:6px;display:inline-block;">Dedicated Regular Day Off</div>`;
-  } else if (!currentAssignment || !currentAssignment.shift_id) {
-    const isSolved = state.currentScheduleData && state.currentScheduleData.plan &&
-      (state.currentScheduleData.plan.status === "SOLVED" || state.currentScheduleData.plan.status === "PUBLISHED");
-    if (isSolved) {
-      statusHtml = `<div class="brand-badge" style="background:#f1f5f9;color:#475569;margin-top:6px;display:inline-block;border:1px solid #cbd5e1;">⚪ Scheduled Rest Day (OFF) • Contract Target Fulfilled</div>`;
-    } else {
-      statusHtml = `<div class="brand-badge" style="background:#f8fafc;color:#64748b;margin-top:6px;display:inline-block;border:1px dashed #cbd5e1;">Empty Cell (Fillable by Solver)</div>`;
+    statusBadgeHtml = `<span class="brand-badge" style="background:#f1f5f9;color:#475569;">🔒 Dedicated Regular Off</span>`;
+  } else if (currentAssignment && currentAssignment.shift_code) {
+    const flTag = currentAssignment.is_floating ? ` [Floating to ${currentAssignment.department_code}]` : "";
+    const pinTag = currentAssignment.is_pinned ? " 📌" : "";
+    statusBadgeHtml = `<span class="brand-badge" style="background:#3b82f6;color:#fff;">${currentAssignment.shift_name || currentAssignment.shift_code}${flTag}${pinTag}</span>`;
+  } else {
+    statusBadgeHtml = `<span class="brand-badge" style="background:#f8fafc;color:#64748b;border:1px dashed #cbd5e1;">⚪ Empty Cell (Fillable by Solver)</span>`;
+  }
+
+  // Preceding & Next shift context
+  let prevShiftInfo = "None (Off)";
+  let nextShiftInfo = "None (Off)";
+  if (rowIdx !== null && state.currentScheduleData && state.currentScheduleData.rows && state.currentScheduleData.rows[rowIdx]) {
+    const assignments = state.currentScheduleData.rows[rowIdx].assignments || {};
+    const curDateObj = new Date(dateStr + "T00:00:00");
+    const prevDateStr = new Date(curDateObj.getTime() - 86400000).toISOString().slice(0, 10);
+    const nextDateStr = new Date(curDateObj.getTime() + 86400000).toISOString().slice(0, 10);
+    if (assignments[prevDateStr] && assignments[prevDateStr].shift_code) {
+      prevShiftInfo = `${assignments[prevDateStr].shift_code} (${prevDateStr.slice(5)})`;
+    }
+    if (assignments[nextDateStr] && assignments[nextDateStr].shift_code) {
+      nextShiftInfo = `${assignments[nextDateStr].shift_code} (${nextDateStr.slice(5)})`;
     }
   }
 
   content.innerHTML = `
-    <div style="font-size:12px;">
-      <div><b>Employee:</b> ${emp.employee_name} (${emp.primary_department_code || ""})</div>
-      <div><b>Date:</b> ${dateStr}</div>
-      ${statusHtml}
-      <div style="margin-top:8px;"><b>Change Shift:</b></div>
+    <!-- Card 1: Selection Details -->
+    <div class="inspector-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+        <b style="font-size:13px;color:#0f172a;">${emp.employee_name}</b>
+        <span class="dept-badge-tag" style="background:${emp.primary_department_color || '#3b82f6'};">${emp.primary_department_code || ''}</span>
+      </div>
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;">${emp.employee_code} • ${formattedDate}</div>
+      <div style="margin-top:4px;">${statusBadgeHtml}</div>
+    </div>
+
+    <!-- Card 2: Shift Reassignment -->
+    <div class="inspector-card">
+      <div class="inspector-card-title">
+        <span>🔄 Reassign Shift</span>
+      </div>
+      <label style="font-size:11px;color:var(--text-muted);display:block;margin-top:2px;">Target Shift:</label>
       ${shiftSelectorHtml}
-      <div style="margin-top:8px;"><b>Department:</b></div>
+      <label style="font-size:11px;color:var(--text-muted);display:block;margin-top:8px;">Target Department:</label>
       ${deptSelectorHtml}
-      <div id="validation-feedback" style="margin-top:12px;"></div>
-      <button id="apply-shift-btn" class="btn btn-sm btn-primary" style="width:100%;margin-top:10px;">Apply & Validate Move</button>
+      <div id="validation-feedback" style="margin-top:8px;"></div>
+      <button id="apply-shift-btn" class="btn btn-sm btn-primary" style="width:100%;margin-top:10px;font-weight:600;">✓ Apply & Validate Shift</button>
+    </div>
+
+    <!-- Card 3: Ergonomic Context -->
+    <div class="inspector-card">
+      <div class="inspector-card-title">
+        <span>⏱️ Ergonomic Rest Context</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:11px;">
+        <div style="background:#fff;padding:6px;border-radius:4px;border:1px solid #e2e8f0;">
+          <div style="color:var(--text-muted);">Day Prior</div>
+          <div style="font-weight:600;color:#334155;">${prevShiftInfo}</div>
+        </div>
+        <div style="background:#fff;padding:6px;border-radius:4px;border:1px solid #e2e8f0;">
+          <div style="color:var(--text-muted);">Day After</div>
+          <div style="font-weight:600;color:#334155;">${nextShiftInfo}</div>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1555,7 +1826,7 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
 
       const fb = document.getElementById("validation-feedback");
       if (val.is_valid) {
-        fb.innerHTML = `<div class="alert-card success">✓ Valid Assignment! No ergonomic violations detected.</div>`;
+        fb.innerHTML = `<div class="alert-card success" style="margin-top:6px;">✓ Valid Assignment! No ergonomic violations detected.</div>`;
         // Commit
         await apiPost(`/api/roster/${state.activePlanId}/assignments`, {
           employee_id: emp.employee_id,
@@ -1569,9 +1840,9 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
       } else {
         const msgs = val.violations.map(v => `• ${v.message}`).join("<br>");
         fb.innerHTML = `
-          <div class="alert-card danger">
+          <div class="alert-card danger" style="margin-top:6px;">
             <b>Rule Conflict:</b><br>${msgs}
-            <button id="force-override-btn" class="btn btn-sm" style="margin-top:6px;width:100%;">Force Override Anyway</button>
+            <button id="force-override-btn" class="btn btn-sm" style="margin-top:6px;width:100%;background:#ef4444;color:#fff;border:none;">Force Override Anyway</button>
           </div>
         `;
         document.getElementById("force-override-btn").onclick = async () => {
@@ -1646,7 +1917,7 @@ async function selectAssignment(emp, dateStr, currentAssignment, rowIdx = null, 
   const pinBtn = document.getElementById("inspector-pin-btn");
   if (pinBtn) {
     const isPinned = currentAssignment && currentAssignment.is_pinned;
-    pinBtn.textContent = isPinned ? "Unpin Shift 🔓" : "Pin Current Shift 📌";
+    pinBtn.innerHTML = isPinned ? "🔓 Unpin Shift" : "📌 Pin Current";
     pinBtn.className = `btn btn-sm ${isPinned ? "btn-primary" : ""}`;
     pinBtn.onclick = async () => {
       if (!currentAssignment || !currentAssignment.assignment_id) {
@@ -2270,6 +2541,205 @@ function initResizers() {
 }
 
 // ==========================================
+// Employee Column Resizer & View Horizon Controller
+// ==========================================
+function setEmpColWidth(width) {
+  const w = Math.max(110, Math.min(320, width));
+  state.empColWidth = w;
+  localStorage.setItem("localroster_emp_col_width", w);
+
+  const table = document.getElementById("schedule-table");
+  if (table) {
+    table.style.setProperty("--emp-col-width", `${w}px`);
+  }
+  document.querySelectorAll(".sticky-col").forEach(col => {
+    col.style.width = `${w}px`;
+    col.style.minWidth = `${w}px`;
+    col.style.maxWidth = `${w}px`;
+  });
+  const label = document.getElementById("emp-col-width-label");
+  if (label) label.textContent = `${w}px`;
+  const slider = document.getElementById("emp-col-slider");
+  if (slider) slider.value = w;
+  const valDisplay = document.getElementById("col-width-val-display");
+  if (valDisplay) valDisplay.textContent = `${w}px`;
+}
+
+function initEmpColResizer() {
+  let isDragging = false;
+  let startX = 0;
+  let startWidth = 180;
+
+  const onMouseMove = (e) => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const newWidth = Math.max(110, Math.min(320, startWidth + dx));
+    setEmpColWidth(newWidth);
+  };
+
+  const onMouseUp = () => {
+    if (isDragging) {
+      isDragging = false;
+      document.body.classList.remove("resizing-active");
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    }
+  };
+
+  document.addEventListener("mousedown", (e) => {
+    if (e.target.classList.contains("emp-col-resizer") || e.target.id === "emp-col-resizer") {
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      startWidth = state.empColWidth || 180;
+      document.body.classList.add("resizing-active");
+      window.addEventListener("mousemove", onMouseMove);
+      window.addEventListener("mouseup", onMouseUp);
+    }
+  });
+}
+
+function applyVisiblePeriod(period) {
+  state.visiblePeriod = period;
+  const select = document.getElementById("duration-select");
+  if (select && select.value !== period) {
+    select.value = period;
+  }
+  if (state.currentScheduleData) {
+    if (state.currentView === "staff_centric") {
+      renderStaffCentric(state.currentScheduleData);
+    } else if (state.currentView === "slot_centric") {
+      renderSlotCentric(state.currentScheduleData);
+    }
+  }
+}
+
+function escapeQuotes(str) {
+  return (str || "").replace(/'/g, "\\'").replace(/"/g, "&quot;");
+}
+
+// ==========================================
+// Roster Hub Controller
+// ==========================================
+window.openRosterHub = async function() {
+  const modal = document.getElementById("modal-roster-hub");
+  if (!modal) return;
+  modal.classList.remove("hidden");
+  await renderRosterHub();
+};
+
+window.renderRosterHub = async function() {
+  const listEl = document.getElementById("roster-hub-list");
+  const countBadge = document.getElementById("hub-plans-count");
+  if (!listEl) return;
+
+  try {
+    state.plans = await apiGet("/api/roster/plans");
+  } catch (err) {
+    console.error("Error refreshing plans for hub:", err);
+  }
+
+  const plans = state.plans || [];
+  if (countBadge) {
+    countBadge.textContent = `${plans.length} ${plans.length === 1 ? 'Roster' : 'Rosters'}`;
+  }
+
+  if (plans.length === 0) {
+    listEl.innerHTML = `
+      <div style="padding:24px;text-align:center;color:var(--text-muted);background:#f8fafc;border-radius:8px;">
+        <div style="font-size:24px;margin-bottom:6px;">📭</div>
+        <div style="font-weight:600;color:#334155;">No Rosters Found</div>
+        <div style="font-size:12px;margin-top:4px;">Generate your first schedule using the button above.</div>
+      </div>
+    `;
+    return;
+  }
+
+  let html = "";
+  plans.forEach(p => {
+    const isActive = p.id === state.activePlanId;
+    const isVariant = p.parent_plan_id != null;
+    const variantLabel = isVariant ? `<span class="badge" style="background:#e0e7ff;color:#4338ca;font-size:10px;">Variant</span>` : "";
+    const activeBadge = isActive
+      ? `<span class="badge" style="background:#dcfce7;color:#15803d;font-weight:700;font-size:11px;">✓ ACTIVE IN WORKSPACE</span>`
+      : "";
+    const statusColor = p.status === "SOLVED" ? "#0284c7" : p.status === "PUBLISHED" ? "#16a34a" : "#ca8a04";
+
+    html += `
+      <div class="roster-hub-card ${isActive ? 'active-plan-card' : ''}">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:8px;">
+          <div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              <span class="roster-hub-title">${escapeHtml(p.name)}</span>
+              ${activeBadge}
+              ${variantLabel}
+            </div>
+            <div class="roster-hub-meta">
+              <span class="badge" style="background:${statusColor}18;color:${statusColor};font-weight:600;font-size:10px;">${p.status}</span>
+              <span>📅 Horizon: <b>${p.horizon_days || 30} Days</b></span>
+              <span>•</span>
+              <span>👥 <b>${p.assignments_count ?? 0}</b> Shift Assignments</span>
+              ${p.created_at ? `<span>•</span><span>Created: ${new Date(p.created_at).toLocaleDateString()}</span>` : ""}
+            </div>
+          </div>
+          <div class="roster-hub-actions">
+            ${!isActive ? `<button class="btn btn-sm btn-primary" onclick="setActivePlanFromHub(${p.id})">✓ Set Active</button>` : `<button class="btn btn-sm" disabled style="opacity:0.6;">Active</button>`}
+            <button class="btn btn-sm" onclick="renamePlanFromHub(${p.id}, '${escapeQuotes(p.name)}')">✏️ Rename</button>
+            <button class="btn btn-sm" onclick="duplicatePlanFromHub(${p.id})">📋 Duplicate</button>
+            <button class="btn btn-sm btn-danger" onclick="deletePlanFromHub(${p.id}, '${escapeQuotes(p.name)}')">🗑️ Delete</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+  listEl.innerHTML = html;
+};
+
+window.setActivePlanFromHub = async function(planId) {
+  state.activePlanId = planId;
+  const planSelect = document.getElementById("plan-select");
+  if (planSelect) planSelect.value = planId;
+  const modal = document.getElementById("modal-roster-hub");
+  if (modal) modal.classList.add("hidden");
+  await loadSchedule();
+};
+
+window.renamePlanFromHub = async function(planId, currentName) {
+  const newName = prompt("Enter new name for this roster plan:", currentName);
+  if (!newName || newName.trim() === "" || newName.trim() === currentName) return;
+  try {
+    await apiPatch(`/api/roster/${planId}`, { name: newName.trim() });
+    await loadPlans();
+    await renderRosterHub();
+  } catch (err) {
+    alert("Failed to rename roster: " + err.message);
+  }
+};
+
+window.duplicatePlanFromHub = async function(planId) {
+  try {
+    const res = await apiPost(`/api/roster/${planId}/duplicate`, {});
+    await loadPlans();
+    await renderRosterHub();
+    alert(`Roster duplicated successfully as "${res.name}"!`);
+  } catch (err) {
+    alert("Failed to duplicate roster: " + err.message);
+  }
+};
+
+window.deletePlanFromHub = async function(planId, name) {
+  if (!confirm(`Are you sure you want to delete roster "${name}"?\nAll associated shift assignments and deficit logs will be removed.`)) return;
+  try {
+    await apiDelete(`/api/roster/${planId}`);
+    await loadPlans();
+    await renderRosterHub();
+    alert(`Roster "${name}" deleted.`);
+  } catch (err) {
+    alert("Failed to delete roster: " + err.message);
+  }
+};
+
+// ==========================================
 // Onboarding Wizard Controller
 // ==========================================
 function initOnboarding() {
@@ -2340,6 +2810,92 @@ function setupEventListeners() {
       state.activePlanId = parseInt(e.target.value);
       loadSchedule();
     };
+  }
+
+  // Roster Management Hub Triggers
+  const manageRostersBtn = document.getElementById("manage-rosters-btn");
+  if (manageRostersBtn) {
+    manageRostersBtn.onclick = () => window.openRosterHub();
+  }
+
+  const viewPaneHubBtn = document.getElementById("view-pane-roster-hub-btn");
+  if (viewPaneHubBtn) {
+    viewPaneHubBtn.onclick = () => window.openRosterHub();
+  }
+
+  const hubCreateBtn = document.getElementById("hub-create-plan-btn");
+  if (hubCreateBtn) {
+    hubCreateBtn.onclick = () => {
+      document.getElementById("modal-roster-hub")?.classList.add("hidden");
+      document.getElementById("modal-new-plan")?.classList.remove("hidden");
+      updateNewPlanPreview();
+    };
+  }
+
+  // View Horizon / Duration Selector Controls
+  const durationSelect = document.getElementById("duration-select");
+  if (durationSelect) {
+    durationSelect.onchange = (e) => {
+      applyVisiblePeriod(e.target.value);
+    };
+  }
+
+  const prevPeriodBtn = document.getElementById("prev-period-btn");
+  if (prevPeriodBtn) {
+    prevPeriodBtn.onclick = () => {
+      const order = ["all", "week_1", "week_2", "week_3", "week_4", "week_5"];
+      const cur = state.visiblePeriod || "all";
+      const idx = order.indexOf(cur);
+      if (idx > 0) {
+        applyVisiblePeriod(order[idx - 1]);
+      } else if (cur === "days_14") {
+        applyVisiblePeriod("days_7");
+      } else if (cur === "days_7") {
+        applyVisiblePeriod("all");
+      } else {
+        applyVisiblePeriod("week_5");
+      }
+    };
+  }
+
+  const nextPeriodBtn = document.getElementById("next-period-btn");
+  if (nextPeriodBtn) {
+    nextPeriodBtn.onclick = () => {
+      const order = ["all", "week_1", "week_2", "week_3", "week_4", "week_5"];
+      const cur = state.visiblePeriod || "all";
+      const idx = order.indexOf(cur);
+      if (idx >= 0 && idx < order.length - 1) {
+        applyVisiblePeriod(order[idx + 1]);
+      } else if (cur === "days_7") {
+        applyVisiblePeriod("days_14");
+      } else if (cur === "days_14") {
+        applyVisiblePeriod("all");
+      } else {
+        applyVisiblePeriod("all");
+      }
+    };
+  }
+
+  // Employee Column Width Controls & Slider
+  const btnCompact = document.getElementById("col-width-compact-btn");
+  if (btnCompact) {
+    btnCompact.onclick = () => setEmpColWidth(120);
+  }
+
+  const btnNormal = document.getElementById("col-width-normal-btn");
+  if (btnNormal) {
+    btnNormal.onclick = () => setEmpColWidth(180);
+  }
+
+  const btnWide = document.getElementById("col-width-wide-btn");
+  if (btnWide) {
+    btnWide.onclick = () => setEmpColWidth(240);
+  }
+
+  const colSlider = document.getElementById("emp-col-slider");
+  if (colSlider) {
+    colSlider.value = state.empColWidth || 180;
+    colSlider.oninput = (e) => setEmpColWidth(parseInt(e.target.value));
   }
 
   const viewSelect = document.getElementById("view-select");
@@ -3188,6 +3744,78 @@ function setupEventListeners() {
     };
   });
 
+  // Live Calendar & Duration Preview in New Plan Modal
+  function updateNewPlanPreview() {
+    const yearEl = document.getElementById("new-plan-year");
+    const monthEl = document.getElementById("new-plan-month");
+    const durEl = document.getElementById("new-plan-duration");
+    const customRangeEl = document.getElementById("new-plan-custom-range");
+    const previewEl = document.getElementById("calendar-preview");
+    const nameEl = document.getElementById("new-plan-name");
+
+    if (!yearEl || !monthEl || !durEl || !previewEl) return;
+    const year = parseInt(yearEl.value);
+    const month = parseInt(monthEl.value);
+    const dur = durEl.value;
+
+    const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const monthFull = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const mName = monthNames[month - 1];
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    if (dur === "custom") {
+      if (customRangeEl) customRangeEl.classList.remove("hidden");
+      const cStart = document.getElementById("new-plan-custom-start")?.value;
+      const cEnd = document.getElementById("new-plan-custom-end")?.value;
+      if (cStart && cEnd) {
+        previewEl.innerHTML = `Custom Horizon: <b>${cStart}</b> to <b>${cEnd}</b>`;
+      } else {
+        previewEl.innerHTML = `Please specify custom start and end dates below.`;
+      }
+    } else {
+      if (customRangeEl) customRangeEl.classList.add("hidden");
+      let daysCount = daysInMonth;
+      let startStr = `${mName} 01, ${year}`;
+      let endStr = `${mName} ${String(daysInMonth).padStart(2, '0')}, ${year}`;
+
+      if (dur === "1_week") {
+        daysCount = 7;
+        endStr = `${mName} 07, ${year}`;
+        if (nameEl && !nameEl.dataset.userEdited) nameEl.value = `${monthFull[month - 1]} ${year} (Week 1)`;
+      } else if (dur === "2_weeks") {
+        daysCount = 14;
+        endStr = `${mName} 14, ${year}`;
+        if (nameEl && !nameEl.dataset.userEdited) nameEl.value = `${monthFull[month - 1]} ${year} (2 Weeks)`;
+      } else {
+        if (nameEl && !nameEl.dataset.userEdited) nameEl.value = `${monthFull[month - 1]} ${year} Roster`;
+      }
+
+      previewEl.innerHTML = `Horizon: <b>${startStr}</b> to <b>${endStr}</b> (${daysCount} days).`;
+    }
+  }
+
+  const newPlanYear = document.getElementById("new-plan-year");
+  if (newPlanYear) newPlanYear.onchange = updateNewPlanPreview;
+
+  const newPlanMonth = document.getElementById("new-plan-month");
+  if (newPlanMonth) newPlanMonth.onchange = updateNewPlanPreview;
+
+  const newPlanDur = document.getElementById("new-plan-duration");
+  if (newPlanDur) newPlanDur.onchange = updateNewPlanPreview;
+
+  const newPlanCustomStart = document.getElementById("new-plan-custom-start");
+  if (newPlanCustomStart) newPlanCustomStart.onchange = updateNewPlanPreview;
+
+  const newPlanCustomEnd = document.getElementById("new-plan-custom-end");
+  if (newPlanCustomEnd) newPlanCustomEnd.onchange = updateNewPlanPreview;
+
+  const newPlanName = document.getElementById("new-plan-name");
+  if (newPlanName) {
+    newPlanName.oninput = () => {
+      newPlanName.dataset.userEdited = "true";
+    };
+  }
+
   // Confirm New Plan from Modal
   const confirmGenBtn = document.getElementById("confirm-generate-btn");
   if (confirmGenBtn) {
@@ -3197,17 +3825,43 @@ function setupEventListeners() {
         const year = parseInt(document.getElementById("new-plan-year").value);
         const month = parseInt(document.getElementById("new-plan-month").value);
         const variants = parseInt(document.getElementById("new-plan-variants").value);
+        const durationType = document.getElementById("new-plan-duration")?.value || "full_month";
+
+        let startDate = null;
+        let endDate = null;
+
+        if (durationType === "1_week") {
+          startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+          endDate = `${year}-${String(month).padStart(2, '0')}-07`;
+        } else if (durationType === "2_weeks") {
+          startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+          endDate = `${year}-${String(month).padStart(2, '0')}-14`;
+        } else if (durationType === "custom") {
+          const cStart = document.getElementById("new-plan-custom-start")?.value;
+          const cEnd = document.getElementById("new-plan-custom-end")?.value;
+          if (!cStart || !cEnd) {
+            alert("Please select both start date and end date for custom range.");
+            return;
+          }
+          startDate = cStart;
+          endDate = cEnd;
+        }
 
         document.querySelectorAll(".modal-overlay").forEach(m => m.classList.add("hidden"));
 
+        const payload = {
+          name,
+          planning_year: year,
+          planning_month: month,
+          variant_count: variants,
+          timeout_seconds: 15 };
+        if (startDate && endDate) {
+          payload.start_date = startDate;
+          payload.end_date = endDate;
+        }
+
         const result = await runSolverWithEngagingProgress(async () => {
-          return await apiPost("/api/roster/generate", {
-            name,
-            planning_year: year,
-            planning_month: month,
-            variant_count: variants,
-            timeout_seconds: 15
-          });
+          return await apiPost("/api/roster/generate", payload);
         }, 15);
 
         if (result) {

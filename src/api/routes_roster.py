@@ -1,5 +1,6 @@
 """Roster planning, solver execution, drag-and-drop validation, and variants API."""
 import calendar
+import uuid
 from datetime import date, timedelta
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 from src.db.session import get_db
 from src.db.models import RosterPlan, RosterAssignment, DeficitLog, Department, ShiftType, Employee, LeaveRecord, EmployeeDepartmentEligibility, SystemSetting
 from src.api.schemas import (
-    GenerateRosterRequest, ValidateAssignmentRequest,
+    GenerateRosterRequest, UpdatePlanRequest, ValidateAssignmentRequest,
     ManualAssignmentRequest, PrefillShiftsRequest, FindReplaceRequest,
     PinOffRequest
 )
@@ -43,6 +44,8 @@ def list_plans(
             "planning_month": p.planning_month,
             "start_date": p.start_date.isoformat(),
             "end_date": p.end_date.isoformat(),
+            "horizon_days": (p.end_date - p.start_date).days + 1,
+            "assignments_count": len(p.assignments),
             "status": p.status,
             "solver_status": p.solver_status,
             "total_deficits": p.total_deficits,
@@ -145,16 +148,16 @@ def get_previous_month_summary(
 
 @router.post("/generate")
 def trigger_generation(req: GenerateRosterRequest, db: Session = Depends(get_db)):
-    # Calculate dates from year and month if provided
-    if req.planning_year and req.planning_month:
+    # Calculate dates: explicit custom date range takes priority
+    if req.start_date and req.end_date:
+        start_date = req.start_date
+        end_date = req.end_date
+    elif req.planning_year and req.planning_month:
         num_days = calendar.monthrange(req.planning_year, req.planning_month)[1]
         start_date = date(req.planning_year, req.planning_month, 1)
         end_date = date(req.planning_year, req.planning_month, num_days)
-    elif req.start_date and req.end_date:
-        start_date = req.start_date
-        end_date = req.end_date
     else:
-        # Default to current month or next month
+        # Default to current month
         today = date.today()
         num_days = calendar.monthrange(today.year, today.month)[1]
         start_date = date(today.year, today.month, 1)
@@ -201,6 +204,109 @@ def trigger_generation(req: GenerateRosterRequest, db: Session = Depends(get_db)
         "total_deficits": primary.total_deficits,
         "total_floats": primary.total_floats,
         "variants": variants_resp
+    }
+
+@router.patch("/{plan_id}")
+def update_plan(plan_id: int, req: UpdatePlanRequest, db: Session = Depends(get_db)):
+    """Update roster plan metadata such as name, status, or active variant setting."""
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    if req.name is not None and req.name.strip():
+        plan.name = req.name.strip()
+    if req.status is not None:
+        plan.status = req.status
+    if req.is_active_variant is not None:
+        if req.is_active_variant:
+            # Deactivate other variants in same session
+            db.query(RosterPlan).filter(RosterPlan.session_id == plan.session_id).update({"is_active_variant": False})
+        plan.is_active_variant = req.is_active_variant
+
+    db.commit()
+    db.refresh(plan)
+    return {
+        "message": "Plan updated successfully.",
+        "id": plan.id,
+        "name": plan.name,
+        "status": plan.status,
+        "is_active_variant": plan.is_active_variant
+    }
+
+@router.delete("/{plan_id}")
+def delete_plan(plan_id: int, db: Session = Depends(get_db)):
+    """Delete a roster plan and all associated assignments and deficit logs."""
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    # Unlink any child variants that reference this plan as parent
+    db.query(RosterPlan).filter(RosterPlan.parent_plan_id == plan_id).update({"parent_plan_id": None})
+    db.delete(plan)
+    db.commit()
+    return {"message": f"Roster plan '{plan.name}' has been successfully deleted."}
+
+@router.post("/{plan_id}/duplicate")
+def duplicate_plan(plan_id: int, db: Session = Depends(get_db)):
+    """Clone an existing roster plan with all assignments and deficits for what-if scenario testing."""
+    plan = db.query(RosterPlan).filter(RosterPlan.id == plan_id).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found.")
+
+    new_session_id = str(uuid.uuid4())[:16]
+    new_plan = RosterPlan(
+        session_id=new_session_id,
+        name=f"Copy of {plan.name}",
+        variant_name=f"{plan.variant_name} (Copy)",
+        variant_strategy=plan.variant_strategy,
+        is_active_variant=True,
+        planning_year=plan.planning_year,
+        planning_month=plan.planning_month,
+        start_date=plan.start_date,
+        end_date=plan.end_date,
+        status="DRAFT" if plan.status == "PUBLISHED" else plan.status,
+        solver_status=plan.solver_status,
+        solve_time_seconds=plan.solve_time_seconds,
+        total_deficits=plan.total_deficits,
+        total_floats=plan.total_floats,
+        objective_score=plan.objective_score
+    )
+    db.add(new_plan)
+    db.flush()
+
+    # Replicate assignments
+    for a in plan.assignments:
+        db.add(RosterAssignment(
+            plan_id=new_plan.id,
+            employee_id=a.employee_id,
+            department_id=a.department_id,
+            shift_type_id=a.shift_type_id,
+            date=a.date,
+            assignment_source=a.assignment_source,
+            is_pinned=a.is_pinned,
+            is_manual_override=a.is_manual_override,
+            is_floating=a.is_floating,
+            float_rank=a.float_rank
+        ))
+
+    # Replicate deficit logs
+    for d in plan.deficits:
+        db.add(DeficitLog(
+            plan_id=new_plan.id,
+            department_id=d.department_id,
+            shift_type_id=d.shift_type_id,
+            date=d.date,
+            shortage_count=d.shortage_count,
+            reason_code=d.reason_code
+        ))
+
+    db.commit()
+    db.refresh(new_plan)
+    return {
+        "message": f"Successfully duplicated '{plan.name}'.",
+        "id": new_plan.id,
+        "plan_id": new_plan.id,
+        "name": new_plan.name
     }
 
 @router.get("/{plan_id}")

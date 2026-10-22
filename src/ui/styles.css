@@ -1345,3 +1345,233 @@ body.resizing-active {
   align-self: flex-start;
   margin-bottom: 6px;
 }
+
+/* ==========================================
+   Interactive Employee Column Width & Resizer
+   ========================================== */
+:root {
+  --emp-col-width: 180px;
+}
+
+.sticky-col {
+  width: var(--emp-col-width, 180px) !important;
+  min-width: var(--emp-col-width, 180px) !important;
+  max-width: var(--emp-col-width, 180px) !important;
+  position: sticky;
+  left: 0;
+  background: #ffffff;
+  z-index: 5;
+  text-align: left !important;
+  padding: calc(6px * var(--zoom-factor, 1)) calc(8px * var(--zoom-factor, 1)) !important;
+  font-weight: 600;
+  border-right: 2px solid #cbd5e1 !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.schedule-table th.sticky-col {
+  z-index: 15;
+  background: #f1f5f9;
+  position: sticky;
+  left: 0;
+  top: 0;
+  overflow: visible;
+}
+
+.emp-col-resizer {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  user-select: none;
+  background: transparent;
+  z-index: 30;
+  transition: background 0.15s ease;
+}
+
+.emp-col-resizer:hover, .emp-col-resizer.is-resizing {
+  background: #3b82f6 !important;
+}
+
+.emp-sticky-card {
+  width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.emp-name-truncate {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(var(--emp-col-width, 180px) - 56px);
+  display: inline-block;
+  vertical-align: middle;
+}
+
+/* ==========================================
+   Roster Management Hub Styles
+   ========================================== */
+.btn-header-hub {
+  background: #3b82f6;
+  color: #ffffff;
+  border: 1px solid #2563eb;
+  font-weight: 600;
+  padding: 4px 11px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-header-hub:hover {
+  background: #2563eb;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+}
+
+.roster-hub-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin-bottom: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  transition: all 0.15s ease;
+}
+
+.roster-hub-card:hover {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+}
+
+.roster-hub-card.active-plan-card {
+  border-left: 4px solid #10b981;
+  background: #f0fdf4;
+}
+
+.roster-hub-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.roster-hub-meta {
+  font-size: 12px;
+  color: #64748b;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.roster-hub-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* ==========================================
+   Enhanced Right Inspector Styles
+   ========================================== */
+.inspector-context-pill {
+  background: #f1f5f9;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.inspector-card {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+}
+
+.inspector-card-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.quick-action-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.action-pill-btn {
+  padding: 7px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: #ffffff;
+  color: #1e293b;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: all 0.12s ease;
+}
+
+.action-pill-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.06);
+}
+
+.action-pill-empty { background: #f8fafc; color: #475569; border-color: #cbd5e1; }
+.action-pill-empty:hover { background: #f1f5f9; color: #0f172a; }
+.action-pill-do { background: #f1f5f9; color: #1e293b; border-color: #94a3b8; }
+.action-pill-do:hover { background: #e2e8f0; }
+.action-pill-coff { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+.action-pill-coff:hover { background: #fde68a; }
+.action-pill-pin { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+.action-pill-pin:hover { background: #bae6fd; }
+
+.legend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.legend-chip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #475569;
+  background: #ffffff;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
+}
+
