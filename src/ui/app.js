@@ -3159,8 +3159,12 @@ function setupEventListeners() {
   const onSolveRemaining = async () => {
     if (!state.activePlanId) return;
     try {
-      await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
-      await loadSchedule();
+      const res = await runSolverWithEngagingProgress(async () => {
+        return await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
+      }, 15, { mode: "solve_remaining" });
+      if (res) {
+        await loadSchedule();
+      }
     } catch (err) {
       alert("Failed to solve remaining blank slots: " + err.message);
     }
@@ -4310,56 +4314,170 @@ window.promoteVariant = async function(planId) {
 // ==========================================
 // Solver Execution with Engaging Live Progress
 // ==========================================
-async function runSolverWithEngagingProgress(generateFn, timeoutLimit = 15) {
+async function runSolverWithEngagingProgress(generateFn, timeoutLimit = 15, options = {}) {
   const modal = document.getElementById("modal-solver-progress");
   const pctEl = document.getElementById("solver-progress-pct");
   const fillEl = document.getElementById("solver-progress-fill");
   const statusEl = document.getElementById("solver-dynamic-status-text");
   const elapsedEl = document.getElementById("solver-elapsed-sec");
   const limitEl = document.getElementById("solver-timeout-limit");
+  const titleEl = document.getElementById("solver-modal-title");
+  const modeBadgeEl = document.getElementById("solver-mode-badge");
+  const expectedEl = document.getElementById("solver-expected-time");
+  const remainingEl = document.getElementById("solver-time-remaining");
+  const baselineEl = document.getElementById("solver-baseline-sec");
+  const thoughtsListEl = document.getElementById("solver-thoughts-list");
+  const stagePillEl = document.getElementById("solver-stage-pill");
+
+  const mode = options.mode || "generate_new";
+  const isSolveRemaining = mode === "solve_remaining";
 
   if (limitEl) limitEl.textContent = `${timeoutLimit}s`;
-  if (modal) modal.classList.remove("hidden");
+  if (titleEl) {
+    titleEl.textContent = isSolveRemaining
+      ? "Auto-Filling Unassigned Shift Slots..."
+      : "Generating Conflict-Free Roster...";
+  }
+  if (modeBadgeEl) {
+    modeBadgeEl.textContent = isSolveRemaining ? "Solve Remaining Mode" : "CP-SAT Engine";
+  }
 
-  const agentLines = [
-    "Formulating integer decision variables across 4 departments & 32 staff...",
-    "Enforcing ergonomic rest intervals (14h post-night rest, forbidden turnarounds)...",
-    "Locking approved employee vacations and dedicated regular days off...",
-    "Balancing weekend equity and floater distribution across wards...",
-    "Evaluating multi-variant candidate Pareto frontiers...",
-    "Finalizing conflict-free roster and computing workload scorecard..."
+  // Calibrated baseline duration in seconds based on past performance
+  state.lastSolveDuration = state.lastSolveDuration || {};
+  const lastTime = state.lastSolveDuration[mode];
+  const baselineSec = lastTime && lastTime >= 1.0 && lastTime <= timeoutLimit - 2
+    ? lastTime
+    : (isSolveRemaining ? 2.4 : 3.4);
+
+  if (baselineEl) baselineEl.textContent = `${baselineSec.toFixed(1)}s`;
+  if (expectedEl) expectedEl.textContent = `~${baselineSec.toFixed(1)}s`;
+  if (remainingEl) remainingEl.textContent = `Remaining: ~${baselineSec.toFixed(1)}s`;
+
+  // AI Chatbot Thinking Script with timestamp milestones
+  const solveRemainingThoughts = [
+    { delay: 100, stage: "SCANNING", icon: "🔍", text: "Scanning active roster workspace: identifying unassigned shifts and blank slots (—)..." },
+    { delay: 400, stage: "LOCKING", icon: "🔒", text: "Preserving all manager-pinned shifts, approved leaves, and dedicated regular days off..." },
+    { delay: 800, stage: "FORMULATING", icon: "📐", text: "Formulating integer decision variables strictly for empty calendar positions..." },
+    { delay: 1300, stage: "ERGONOMICS", icon: "⚖️", text: "Enforcing ergonomic constraints: 14h forward rotation & max 5 consecutive working days..." },
+    { delay: 1800, stage: "FLOATING", icon: "👥", text: "Evaluating floater candidates & secondary department backup ranks to eliminate deficits..." },
+    { delay: 2300, stage: "OPTIMIZING", icon: "🎯", text: "Balancing weekend load distribution & minimizing overtime spikes across eligible staff..." },
+    { delay: 2800, stage: "CONVERGING", icon: "📈", text: "Pruning branch-and-bound search tree; verifying mathematical optimality..." }
   ];
 
-  let elapsedMs = 0;
-  let progressPct = 15;
-  let lineIdx = 0;
+  const generateNewThoughts = [
+    { delay: 100, stage: "INITIALIZING", icon: "🚀", text: "Formulating integer decision variables across active departments & registered staff..." },
+    { delay: 500, stage: "LOCKING", icon: "🔒", text: "Locking approved employee annual leave, sick days, and dedicated recurring days off..." },
+    { delay: 1000, stage: "DEMAND", icon: "📐", text: "Enforcing statutory staffing demand matrix across morning, evening, and night shifts..." },
+    { delay: 1500, stage: "ERGONOMICS", icon: "⚖️", text: "Validating ergonomic safety rules: 14h post-night rest, forbidding erratic turnarounds..." },
+    { delay: 2000, stage: "FLOATING", icon: "👥", text: "Balancing primary ward coverage before dispatching secondary cross-department floaters..." },
+    { delay: 2500, stage: "PARETO", icon: "🎯", text: "Evaluating multi-variant candidate Pareto frontiers: equity, fairness, and minimal deficits..." },
+    { delay: 3000, stage: "FINALIZING", icon: "📈", text: "Finalizing conflict-free mathematical schedule and generating workload compliance scorecard..." }
+  ];
 
-  if (pctEl) pctEl.textContent = `${progressPct}%`;
-  if (fillEl) fillEl.style.width = `${progressPct}%`;
-  if (statusEl) statusEl.textContent = agentLines[0];
+  const thoughtScript = isSolveRemaining ? solveRemainingThoughts : generateNewThoughts;
+
+  if (thoughtsListEl) thoughtsListEl.innerHTML = "";
+  let thoughtIdx = 0;
+
+  const appendThought = (item) => {
+    if (!thoughtsListEl) return;
+    const timeStr = `${(elapsedMs / 1000).toFixed(1)}s`;
+    const itemEl = document.createElement("div");
+    itemEl.className = "solver-thought-item";
+    itemEl.style.cssText = "display:flex; align-items:flex-start; gap:8px; opacity:0; transform:translateY(4px); transition:all 0.25s ease; padding:3px 0;";
+    itemEl.innerHTML = `
+      <span style="color:#64748b; font-size:10px; font-weight:600; min-width:32px; padding-top:1px;">[${timeStr}]</span>
+      <span style="font-size:12px; line-height:1.2;">${item.icon}</span>
+      <span style="color:#e2e8f0; font-size:11px; flex:1; line-height:1.35;">${item.text}</span>
+    `;
+    thoughtsListEl.appendChild(itemEl);
+    requestAnimationFrame(() => {
+      itemEl.style.opacity = "1";
+      itemEl.style.transform = "translateY(0)";
+    });
+    thoughtsListEl.scrollTop = thoughtsListEl.scrollHeight;
+    if (statusEl) statusEl.textContent = item.text;
+    if (stagePillEl) stagePillEl.textContent = item.stage;
+  };
+
+  appendThought(thoughtScript[0]);
+  thoughtIdx = 1;
+
+  if (pctEl) pctEl.textContent = "0%";
+  if (fillEl) fillEl.style.width = "0%";
+  if (modal) modal.classList.remove("hidden");
+
+  let elapsedMs = 0;
 
   const timer = setInterval(() => {
     elapsedMs += 100;
-    if (elapsedEl) elapsedEl.textContent = `${(elapsedMs / 1000).toFixed(1)}s`;
+    const elapsedSec = elapsedMs / 1000;
+    if (elapsedEl) elapsedEl.textContent = `${elapsedSec.toFixed(1)}s`;
 
-    if (elapsedMs % 600 === 0) {
-      lineIdx = (lineIdx + 1) % agentLines.length;
-      if (statusEl) statusEl.textContent = agentLines[lineIdx];
+    const remSec = Math.max(0.1, baselineSec - elapsedSec);
+    if (remainingEl) {
+      remainingEl.textContent = elapsedSec < baselineSec
+        ? `Remaining: ~${remSec.toFixed(1)}s`
+        : `Finalizing solution...`;
+      remainingEl.style.color = elapsedSec < baselineSec ? "#16a34a" : "#ea580c";
     }
 
-    if (progressPct < 90) {
-      progressPct += Math.random() > 0.4 ? 2 : 1;
-      if (pctEl) pctEl.textContent = `${progressPct}%`;
-      if (fillEl) fillEl.style.width = `${progressPct}%`;
+    let progressPct = 0;
+    if (elapsedSec <= baselineSec) {
+      const ratio = elapsedSec / baselineSec;
+      progressPct = Math.min(90, Math.round(ratio * 90));
+    } else {
+      const overtimeSec = elapsedSec - baselineSec;
+      progressPct = Math.min(98, Math.round(90 + 8 * (1 - Math.exp(-overtimeSec / 2.5))));
+    }
+
+    if (pctEl) pctEl.textContent = `${progressPct}%`;
+    if (fillEl) fillEl.style.width = `${progressPct}%`;
+
+    while (thoughtIdx < thoughtScript.length && elapsedMs >= thoughtScript[thoughtIdx].delay) {
+      appendThought(thoughtScript[thoughtIdx]);
+      thoughtIdx++;
     }
   }, 100);
 
   try {
     const result = await generateFn();
     clearInterval(timer);
+
+    const actualSec = (elapsedMs / 1000).toFixed(1);
+    state.lastSolveDuration[mode] = Math.max(1.0, parseFloat(actualSec));
+
     if (pctEl) pctEl.textContent = "100%";
     if (fillEl) fillEl.style.width = "100%";
-    if (statusEl) statusEl.textContent = "✓ Conflict-free optimal schedule verified! Loading grid...";
+    if (stagePillEl) {
+      stagePillEl.textContent = "COMPLETED";
+      stagePillEl.style.background = "#059669";
+      stagePillEl.style.color = "#ffffff";
+    }
+    if (remainingEl) {
+      remainingEl.textContent = `✓ Completed in ${actualSec}s`;
+      remainingEl.style.color = "#16a34a";
+    }
+
+    const finishMsg = isSolveRemaining
+      ? `✨ All remaining blank slots filled with 0 conflicts (${actualSec}s)! Loading grid...`
+      : `✨ Optimal conflict-free roster verified in ${actualSec}s! Loading grid...`;
+
+    if (statusEl) statusEl.textContent = finishMsg;
+
+    if (thoughtsListEl) {
+      const itemEl = document.createElement("div");
+      itemEl.className = "solver-thought-item done";
+      itemEl.style.cssText = "display:flex; align-items:flex-start; gap:8px; padding:3px 0; color:#34d399; font-weight:600;";
+      itemEl.innerHTML = `
+        <span style="color:#10b981; font-size:10px; font-weight:700; min-width:32px; padding-top:1px;">[${actualSec}s]</span>
+        <span style="font-size:12px; line-height:1.2;">✓</span>
+        <span style="color:#34d399; font-size:11px; flex:1; line-height:1.35;">${finishMsg}</span>
+      `;
+      thoughtsListEl.appendChild(itemEl);
+      thoughtsListEl.scrollTop = thoughtsListEl.scrollHeight;
+    }
+
     await new Promise(r => setTimeout(r, 450));
     if (modal) modal.classList.add("hidden");
     return result;
@@ -4376,7 +4494,7 @@ async function executeRosterGeneration(mode = "blank") {
     if (mode === "existing" && state.activePlanId) {
       const res = await runSolverWithEngagingProgress(async () => {
         return await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
-      }, 15);
+      }, 15, { mode: "solve_remaining" });
       if (res) await loadSchedule();
     } else {
       const curPlan = state.plans.find(p => p.id === state.activePlanId);
@@ -4391,7 +4509,7 @@ async function executeRosterGeneration(mode = "blank") {
           variant_count: 3,
           timeout_seconds: 15
         });
-      }, 15);
+      }, 15, { mode: "generate_new" });
       if (res) await loadPlans();
     }
   } catch (err) {

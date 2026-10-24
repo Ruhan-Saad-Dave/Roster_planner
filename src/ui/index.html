@@ -1112,24 +1112,60 @@
 
   <!-- Modal: Live Engaging Solver Progress -->
   <div id="modal-solver-progress" class="modal-overlay hidden">
-    <div class="modal-content" style="max-width: 520px; text-align: center;">
-      <div class="modal-header" style="background: #1e293b; color: #fff; justify-content: center;">
-        <span style="font-weight: 600;">🤖 Google OR-Tools CP-SAT Solver Running...</span>
+    <div class="modal-content" style="max-width: 580px; text-align: center;">
+      <div class="modal-header" style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); color: #fff; justify-content: space-between; align-items: center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <span style="font-size:18px;">🤖</span>
+          <span id="solver-modal-title" style="font-weight: 700; font-size:14px;">Google OR-Tools CP-SAT Solver Running...</span>
+        </div>
+        <span class="brand-badge" id="solver-mode-badge" style="background:#2563eb; color:#ffffff; font-size:10px; font-weight:600;">CP-SAT Optimization</span>
       </div>
-      <div class="modal-body" style="padding: 24px 20px;">
-        <div style="font-size: 36px; font-weight: 800; color: #2563eb;" id="solver-progress-pct">15%</div>
+      <div class="modal-body" style="padding: 20px 22px;">
+        <!-- Top Metrics: Big Percentage & Live Expected Time Countdown -->
+        <div style="display:flex; justify-content:space-between; align-items:flex-end; margin-bottom: 6px;">
+          <div style="text-align:left;">
+            <span style="font-size: 11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; color:#64748b;">Optimization Progress</span>
+            <div style="font-size: 38px; font-weight: 800; color: #2563eb; line-height: 1;" id="solver-progress-pct">0%</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-size: 11px; color: #64748b; font-weight:600;">Expected Completion:</div>
+            <div style="font-size: 16px; font-weight: 700; color: #0f172a;" id="solver-expected-time">~2.5s</div>
+            <div style="font-size: 11px; color: #16a34a; font-weight: 600;" id="solver-time-remaining">Remaining: ~2.5s</div>
+          </div>
+        </div>
         
+        <!-- Animated Accurate Progress Bar with Glow -->
         <div class="solver-progress-container">
-          <div id="solver-progress-fill" class="solver-progress-bar" style="width: 15%;"></div>
+          <div id="solver-progress-fill" class="solver-progress-bar" style="width: 0%;"></div>
         </div>
 
-        <div class="solver-status-box" style="margin-top: 16px;">
+        <!-- Real-Time Metrics Row -->
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#64748b; background:#f1f5f9; padding:6px 12px; border-radius:6px; margin: 10px 0 14px 0; border: 1px solid #e2e8f0;">
+          <span>⏱️ Elapsed: <b id="solver-elapsed-sec" style="color:#0f172a;">0.0s</b></span>
+          <span>⏳ Target Baseline: <b id="solver-baseline-sec" style="color:#0f172a;">2.5s</b></span>
+          <span>🛡️ Safety Limit: <b id="solver-timeout-limit" style="color:#0f172a;">15s</b></span>
+        </div>
+
+        <!-- AI Chatbot Reasoning Stream Box -->
+        <div class="solver-ai-thought-box" style="background:#0f172a; border-radius:8px; border:1px solid #334155; padding:12px; text-align:left; color:#f8fafc;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; padding-bottom:6px; border-bottom:1px solid #1e293b;">
+            <div style="display:flex; align-items:center; gap:6px; font-size:11px; font-weight:700; color:#38bdf8;">
+              <span class="solver-pulse-dot" style="background:#38bdf8; width:8px; height:8px;"></span>
+              <span>AI REASONING & ALGORITHM TRACE</span>
+            </div>
+            <span id="solver-stage-pill" class="brand-badge" style="background:#1e293b; color:#94a3b8; font-size:10px;">ANALYZING</span>
+          </div>
+          
+          <!-- Scrollable AI Thoughts Feed -->
+          <div id="solver-thoughts-list" style="max-height: 130px; overflow-y:auto; display:flex; flex-direction:column; gap:5px; font-size:11.5px; line-height:1.45;">
+            <!-- Thought items dynamically appended -->
+          </div>
+        </div>
+
+        <!-- Current Active Action Status Line -->
+        <div class="solver-status-box" style="margin-top: 12px;">
           <div class="solver-pulse-dot"></div>
-          <div id="solver-dynamic-status-text" style="flex: 1; text-align: left;">Formulating integer decision variables across 4 departments & 32 staff...</div>
-        </div>
-
-        <div style="margin-top: 14px; font-size: 11px; color: var(--text-muted);">
-          Elapsed: <b id="solver-elapsed-sec">0.8s</b> &bull; Target Time Limit: <b id="solver-timeout-limit">15s</b>
+          <div id="solver-dynamic-status-text" style="flex: 1; text-align: left; font-size:12px;">Initializing mathematical constraint solver...</div>
         </div>
       </div>
     </div>

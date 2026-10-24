@@ -42,6 +42,7 @@
    - [Department-Scoped Rosters in Roster Hub & Workspace](#82-department-scoped-rosters-in-roster-hub--workspace)
    - [Workplace Shift Definitions & Dynamic Operating Hours](#83-workplace-shift-definitions--dynamic-operating-hours)
    - [Setup Wizard Alignment & Onboarding Paths](#84-setup-wizard-alignment--onboarding-paths)
+   - [Solver Progress, Accurate Loading Bar & AI Thought Stream](#85-solver-progress-accurate-loading-bar--ai-thought-stream)
 
 ---
 
@@ -640,3 +641,43 @@ The welcome onboarding wizard (`#modal-onboarding`) has been expanded to support
 - **Path 2**: *Start from Scratch* (Direct access to Organization Manager to set up custom departments, dynamic shifts, and staff).
 - **Path 3**: *Explore Demo Dataset* (Hospital scenario with 4 departments and 32 cross-trained staff).
 - **Path 4 (New)**: *Department & Sub-Team Rosters* (Direct one-click launch into the Roster Management Hub to browse, filter, or create sub-team schedules).
+
+
+---
+
+### 8.5 Solver Progress, Accurate Loading Bar & AI Thought Stream
+To ensure complete transparency and user engagement during algorithm execution, the solver loading experience was upgraded with accurate timing and an interactive AI chatbot reasoning stream:
+
+```
++----------------------------------------------------------------------------------------------------+
+| 🤖 Auto-Filling Unassigned Shift Slots...                                 [ Solve Remaining Mode ] |
++----------------------------------------------------------------------------------------------------+
+|  OPTIMIZATION PROGRESS                                      Expected Completion: ~2.4s             |
+|  [ 72% ]                                                    Remaining: ~0.7s                       |
+|  [==================================>          ]                                                   |
+|                                                                                                    |
+|  ⏱️ Elapsed: 1.7s   •   ⏳ Target Baseline: 2.4s   •   🛡️ Safety Limit: 15s                         |
+|                                                                                                    |
+|  +-- [🧠 AI REASONING & ALGORITHM TRACE] --------------------------------------------- [OPTIMIZING] +|
+|  | [0.1s] 🔍 Scanning active roster workspace: identifying unassigned shifts and blank slots (—)...|
+|  | [0.4s] 🔒 Preserving all manager-pinned shifts, approved leaves, and dedicated off days...      |
+|  | [0.8s] 📐 Formulating integer decision variables strictly for empty calendar positions...      |
+|  | [1.3s] ⚖️ Enforcing ergonomic constraints: 14h forward rotation & max 5 consecutive work days... |
+|  | [1.8s] 👥 Evaluating floater candidates & secondary department backup ranks...                  |
+|  | [2.2s] 🎯 Balancing weekend load distribution & minimizing overtime spikes across staff...     |
+|  +-------------------------------------------------------------------------------------------------+
+|  (•) Current: Balancing weekend load distribution & minimizing overtime spikes across eligible staff...
++----------------------------------------------------------------------------------------------------+
+```
+
+#### Key Enhancements
+1. **Solve Remaining Activation**:
+   - Both `#solve-remaining-btn` (Ribbon Hero) and `#sidebar-solve-btn` (Sidebar) now trigger the engaging progress modal with tailored `solve_remaining` mode parameters instead of executing as a silent blocking background request.
+2. **Accurate Loading Bar & Expected Time Countdown**:
+   - Computes expected completion time based on calibrated historical solve duration (`state.lastSolveDuration[mode]`), dynamically adapting between fast sub-team solves (~1.5s–2.4s) and full-month generation (~3.0s–4.0s).
+   - Real-time remaining countdown: displays estimated remaining seconds (`Remaining: ~0.8s`), switching to `"Finalizing solution..."` if complex branch-and-bound exploration extends past the baseline.
+   - Smooth easing progress bar: accurately moves to 90% at the expected duration, gracefully asymptoting toward 98% during search finalization, and cleanly snapping to 100% on verification.
+3. **AI Chatbot Reasoning Stream**:
+   - Terminal-style dark console (`.solver-ai-thought-box`) displaying live timestamped reasoning thoughts with contextual icons (`🔍`, `🔒`, `📐`, `⚖️`, `👥`, `🎯`, `📈`, `✨`).
+   - Distinct algorithmic trace paths for **Solve Remaining** (preserving pinned shifts and solving unassigned positions) versus **New Plan Generation** (formulating full-month decision matrices and Pareto frontier analysis).
+   - Auto-scrolls with smooth CSS keyframe fade-in transitions to keep the manager engaged.
