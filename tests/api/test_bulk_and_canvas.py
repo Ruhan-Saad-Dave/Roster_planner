@@ -300,3 +300,57 @@ def test_empty_cell_after_clearing_pinned_off(client, test_db, sample_scenario):
     assert solve_res.status_code == 200
     assert solve_res.json()["status"] == "SOLVED"
 
+
+def test_solve_remaining_unique_constraint_shield(client, test_db, sample_scenario):
+    """Verify that solve-remaining never triggers UNIQUE constraint IntegrityError,
+    even when called iteratively with pinned, unpinned, and manual shifts."""
+    gen_res = client.post("/api/roster/generate", json={
+        "name": "Unique Shield Plan",
+        "planning_year": 2026,
+        "planning_month": 11,
+        "variant_count": 1,
+        "timeout_seconds": 5
+    })
+    assert gen_res.status_code == 200
+    plan_id = gen_res.json()["plan_id"]
+
+    emps = test_db.query(Employee).limit(3).all()
+    shifts = test_db.query(ShiftType).all()
+    assert len(emps) >= 3 and len(shifts) >= 2
+
+    # Pin several shifts explicitly
+    for i, emp in enumerate(emps):
+        d_str = f"2026-11-{10 + i:02d}"
+        s = shifts[i % len(shifts)]
+        assign_res = client.post(f"/api/roster/{plan_id}/assignments", json={
+            "employee_id": emp.id,
+            "department_id": emp.primary_department_id,
+            "shift_type_id": s.id,
+            "date": d_str,
+            "is_pinned": True,
+            "force_override": True
+        })
+        assert assign_res.status_code == 200
+
+    # 1. Execute solve-remaining first time
+    solve1 = client.post(f"/api/roster/{plan_id}/solve-remaining?timeout_seconds=5")
+    assert solve1.status_code == 200
+    assert solve1.json()["status"] == "SOLVED"
+
+    # Verify no duplicate (employee_id, date) exists in DB
+    all_assigns = test_db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
+    emp_date_pairs = [(a.employee_id, a.date) for a in all_assigns]
+    assert len(emp_date_pairs) == len(set(emp_date_pairs)), "Duplicate (employee, date) found in DB!"
+
+    # 2. Execute solve-remaining a second time immediately (idempotence test)
+    solve2 = client.post(f"/api/roster/{plan_id}/solve-remaining?timeout_seconds=5")
+    assert solve2.status_code == 200
+    assert solve2.json()["status"] == "SOLVED"
+
+    # Verify again
+    test_db.expire_all()
+    all_assigns2 = test_db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
+    emp_date_pairs2 = [(a.employee_id, a.date) for a in all_assigns2]
+    assert len(emp_date_pairs2) == len(set(emp_date_pairs2)), "Duplicate (employee, date) found on second solve!"
+
+

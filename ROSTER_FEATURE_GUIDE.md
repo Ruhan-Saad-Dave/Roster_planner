@@ -44,6 +44,7 @@
    - [Setup Wizard Alignment & Onboarding Paths](#84-setup-wizard-alignment--onboarding-paths)
    - [Solver Progress, Accurate Loading Bar & AI Thought Stream](#85-solver-progress-accurate-loading-bar--ai-thought-stream)
    - [Auto-Fill Remaining Slots TDZ Resolution & Active Plan Safety Guard](#86-auto-fill-remaining-slots-tdz-resolution--active-plan-safety-guard)
+   - [Atomic In-Place Assignment Reconciliation & Unique Constraint Shield](#87-atomic-in-place-assignment-reconciliation--unique-constraint-shield)
 
 ---
 
@@ -702,4 +703,35 @@ Clicking the **"Auto-Fill Remaining Slots"** button (`#solve-remaining-btn` or `
 3. **Automated Regression Suite**:
    - Added `test_solver_progress_elapsed_ms_initialization_order()` in `tests/ui/test_ui_solver_progress.py` ensuring `elapsedMs` is always declared before `appendThought` is invoked.
    - Added `test_on_solve_remaining_guards_against_missing_active_plan()` verifying active plan presence validation.
+
+---
+
+### 8.7 Atomic In-Place Assignment Reconciliation & Unique Constraint Shield
+
+#### Problem Identified
+During active roster optimization via `POST /api/roster/{plan_id}/solve-remaining`, SQLAlchemy occasionally threw an unhandled database exception:
+```text
+sqlalchemy.exc.IntegrityError: (sqlite3.IntegrityError) UNIQUE constraint failed: roster_assignments.plan_id, roster_assignments.employee_id, roster_assignments.date
+[SQL: INSERT INTO roster_assignments (plan_id, employee_id, department_id, shift_type_id, date, assignment_source, is_pinned, is_manual_override, is_floating, float_rank, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id]
+```
+- **Root Cause**:
+  1. Previously, `solve_remaining_blank_slots` executed a bulk SQL DELETE (`db.query(RosterAssignment).filter(..., is_pinned == False).delete()`) followed by a blind insert loop (`for a in res.assignments: if not a.get("is_pinned"): db.add(assign)`).
+  2. If an employee already had a shift on date $t$ that was pinned or modified, or if session identity map flush ordering lagged behind bulk inserts, SQLAlchemy attempted to insert a duplicate assignment row for the same `(plan_id, employee_id, date)`.
+  3. This violated the database table unique constraint `uq_plan_emp_date` (`UniqueConstraint("plan_id", "employee_id", "date")`), crashing the API call.
+
+#### Fix Applied
+1. **In-Place Assignment Reconciliation in `solve_remaining_blank_slots`**:
+   - In [`src/services/roster_service.py`](file:///c:/Users/HEllo/Roster_planner/src/services/roster_service.py), replaced the fragile delete-and-blind-insert pattern with an atomic dictionary-based reconciliation:
+     - Map existing assignments: `existing_map = {(a.employee_id, a.date): a for a in existing_all}`.
+     - Track solved keys: `solved_keys = set()`.
+     - For every newly solved assignment `(emp_id, a_date)`:
+       - If `key in existing_map` and `existing_row.is_pinned`: preserves the pinned shift intact (`continue`).
+       - If `key in existing_map` and unpinned: updates the existing record **in-place** (`existing_row.department_id = ...`, `existing_row.shift_type_id = ...`). In-place SQL updates never trigger self-row uniqueness collisions.
+       - If `key not in existing_map`: creates and adds the new assignment safely.
+     - For unpinned rows that the solver decided should be off duty, cleanly deletes them.
+2. **Deduplication Shield in `save_solve_result_to_db`**:
+   - Added `seen_keys = set()` deduplication inside `save_solve_result_to_db` to guarantee that multi-variant plan generation never emits duplicate rows for the same employee-date tuple.
+3. **Automated Verification**:
+   - Added `test_solve_remaining_unique_constraint_shield` in [`tests/api/test_bulk_and_canvas.py`](file:///c:/Users/HEllo/Roster_planner/tests/api/test_bulk_and_canvas.py), which generates a plan, sets pinned and manual assignments across multiple days, runs `solve-remaining`, and immediately executes a second consecutive run to verify idempotence and 0 duplicate records.
+
 

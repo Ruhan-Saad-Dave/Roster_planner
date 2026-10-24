@@ -163,7 +163,12 @@ def save_solve_result_to_db(
     db.flush()
 
     # Save assignments
+    seen_keys = set()
     for a in result.assignments:
+        key = (a["employee_id"], a["date"])
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
         assign = RosterAssignment(
             plan_id=plan.id,
             employee_id=a["employee_id"],
@@ -398,22 +403,40 @@ def solve_remaining_blank_slots(
         ctx_relaxed = build_context_from_db(db, plan.start_date, plan.end_date)
         res = solve_roster(ctx_relaxed, timeout_seconds=timeout_seconds, strategy_name=plan.variant_strategy)
 
-    # Delete non-pinned assignments and deficits
-    db.query(RosterAssignment).filter(
-        RosterAssignment.plan_id == plan_id,
-        RosterAssignment.is_pinned == False
-    ).delete()
-    db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).delete()
+    # Reconcile assignments without UNIQUE constraint violations
+    existing_all = db.query(RosterAssignment).filter(RosterAssignment.plan_id == plan_id).all()
+    existing_map = {(a.employee_id, a.date): a for a in existing_all}
+    solved_keys = set()
 
-    # Insert newly solved non-pinned assignments
     for a in res.assignments:
-        if not a.get("is_pinned"):
+        emp_id = a["employee_id"]
+        a_date = a["date"]
+        key = (emp_id, a_date)
+        if key in solved_keys:
+            continue
+        solved_keys.add(key)
+
+        if key in existing_map:
+            existing_row = existing_map[key]
+            if existing_row.is_pinned:
+                # Retain pinned shift intact
+                continue
+            else:
+                # Update unpinned assignment in-place
+                existing_row.department_id = a["department_id"]
+                existing_row.shift_type_id = a["shift_type_id"]
+                existing_row.assignment_source = "SOLVER"
+                existing_row.is_pinned = False
+                existing_row.is_manual_override = False
+                existing_row.is_floating = a["is_floating"]
+                existing_row.float_rank = a["float_rank"]
+        else:
             assign = RosterAssignment(
                 plan_id=plan.id,
-                employee_id=a["employee_id"],
+                employee_id=emp_id,
                 department_id=a["department_id"],
                 shift_type_id=a["shift_type_id"],
-                date=a["date"],
+                date=a_date,
                 assignment_source="SOLVER",
                 is_pinned=False,
                 is_manual_override=False,
@@ -421,6 +444,14 @@ def solve_remaining_blank_slots(
                 float_rank=a["float_rank"]
             )
             db.add(assign)
+
+    # Delete unpinned assignments that are not scheduled in the new solve
+    for key, existing_row in existing_map.items():
+        if not existing_row.is_pinned and key not in solved_keys:
+            db.delete(existing_row)
+
+    # Refresh deficits
+    db.query(DeficitLog).filter(DeficitLog.plan_id == plan_id).delete()
 
     for d in res.deficits:
         deficit_log = DeficitLog(
