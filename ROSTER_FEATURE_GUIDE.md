@@ -43,6 +43,7 @@
    - [Workplace Shift Definitions & Dynamic Operating Hours](#83-workplace-shift-definitions--dynamic-operating-hours)
    - [Setup Wizard Alignment & Onboarding Paths](#84-setup-wizard-alignment--onboarding-paths)
    - [Solver Progress, Accurate Loading Bar & AI Thought Stream](#85-solver-progress-accurate-loading-bar--ai-thought-stream)
+   - [Auto-Fill Remaining Slots TDZ Resolution & Active Plan Safety Guard](#86-auto-fill-remaining-slots-tdz-resolution--active-plan-safety-guard)
 
 ---
 
@@ -681,3 +682,24 @@ To ensure complete transparency and user engagement during algorithm execution, 
    - Terminal-style dark console (`.solver-ai-thought-box`) displaying live timestamped reasoning thoughts with contextual icons (`🔍`, `🔒`, `📐`, `⚖️`, `👥`, `🎯`, `📈`, `✨`).
    - Distinct algorithmic trace paths for **Solve Remaining** (preserving pinned shifts and solving unassigned positions) versus **New Plan Generation** (formulating full-month decision matrices and Pareto frontier analysis).
    - Auto-scrolls with smooth CSS keyframe fade-in transitions to keep the manager engaged.
+
+---
+
+### 8.6 Auto-Fill Remaining Slots TDZ Resolution & Active Plan Safety Guard
+
+#### Problem Identified
+Clicking the **"Auto-Fill Remaining Slots"** button (`#solve-remaining-btn` or `#sidebar-solve-btn`) threw an immediate JavaScript `ReferenceError: Cannot access 'elapsedMs' before initialization` in browser engines.
+- **Root Cause**: In `runSolverWithEngagingProgress`, `let elapsedMs = 0;` was declared *after* the initial seed call `appendThought(thoughtScript[0])`. Because `appendThought` evaluated `elapsedMs` to format `timeStr`, JavaScript's Temporal Dead Zone (TDZ) rules caused an instant uncaught `ReferenceError`, preventing the modal from displaying and stopping the API request from firing.
+- In addition, if no roster plan was actively open (`!state.activePlanId`), the button exited silently without any visual guidance for the manager.
+
+#### Fix Applied
+1. **Scope Initialization Order**:
+   - Hoisted `let elapsedMs = 0;` and `let thoughtIdx = 0;` to the top of `runSolverWithEngagingProgress` prior to `const appendThought = ...` and its invocation.
+   - Added null safety checks `if (!thoughtsListEl || !item) return;` inside `appendThought`.
+2. **Active Plan Guard**:
+   - Updated `onSolveRemaining` in `src/ui/app.js`: if `!state.activePlanId`, it now displays a helpful notification:
+     `alert("Please select or open an active roster plan before solving remaining slots.");`
+3. **Automated Regression Suite**:
+   - Added `test_solver_progress_elapsed_ms_initialization_order()` in `tests/ui/test_ui_solver_progress.py` ensuring `elapsedMs` is always declared before `appendThought` is invoked.
+   - Added `test_on_solve_remaining_guards_against_missing_active_plan()` verifying active plan presence validation.
+
