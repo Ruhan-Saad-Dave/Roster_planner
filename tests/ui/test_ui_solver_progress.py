@@ -76,3 +76,36 @@ def test_solver_progress_css_styles():
     assert "#solver-thoughts-list::-webkit-scrollbar" in css, "Missing custom scrollbar in styles.css"
     assert "@keyframes thought-fade-in" in css, "Missing thought-fade-in animation in styles.css"
     assert ".solver-progress-bar" in css, "Missing .solver-progress-bar in styles.css"
+
+
+def test_solver_progress_elapsed_ms_initialization_order():
+    """Verify elapsedMs is declared before appendThought is called to prevent TDZ ReferenceError."""
+    with open("src/ui/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    m = re.search(r'async function runSolverWithEngagingProgress[\s\S]*?\n\}\n\nasync function executeRosterGeneration', js)
+    assert m, "runSolverWithEngagingProgress not found in app.js"
+    body = m.group(0)
+
+    elapsed_idx = body.find("let elapsedMs = 0;")
+    append_call_idx = body.find("appendThought(thoughtScript[0]);")
+
+    assert elapsed_idx != -1, "let elapsedMs = 0; declaration not found"
+    assert append_call_idx != -1, "appendThought(thoughtScript[0]) call not found"
+    assert elapsed_idx < append_call_idx, (
+        f"Temporal Dead Zone error: elapsedMs declared at index {elapsed_idx} after appendThought call at {append_call_idx}"
+    )
+
+
+def test_on_solve_remaining_guards_against_missing_active_plan():
+    """Verify onSolveRemaining displays a helpful alert when no active plan is selected."""
+    with open("src/ui/app.js", "r", encoding="utf-8") as f:
+        js = f.read()
+
+    m = re.search(r'const onSolveRemaining\s*=\s*async\s*\(\)\s*=>\s*\{([\s\S]*?)\n\s*\};', js)
+    assert m, "onSolveRemaining handler not found"
+    body = m.group(1)
+
+    assert "!state.activePlanId" in body, "Missing activePlanId check"
+    assert "alert(" in body, "Missing user alert when activePlanId is falsy"
+

@@ -3157,7 +3157,10 @@ function setupEventListeners() {
   const solveRemBtn = document.getElementById("solve-remaining-btn");
   const sidebarSolveBtn = document.getElementById("sidebar-solve-btn");
   const onSolveRemaining = async () => {
-    if (!state.activePlanId) return;
+    if (!state.activePlanId) {
+      alert("Please select or open an active roster plan before solving remaining slots.");
+      return;
+    }
     try {
       const res = await runSolverWithEngagingProgress(async () => {
         return await apiPost(`/api/roster/${state.activePlanId}/solve-remaining`, { timeout_seconds: 15 });
@@ -4376,11 +4379,13 @@ async function runSolverWithEngagingProgress(generateFn, timeoutLimit = 15, opti
 
   const thoughtScript = isSolveRemaining ? solveRemainingThoughts : generateNewThoughts;
 
-  if (thoughtsListEl) thoughtsListEl.innerHTML = "";
+  let elapsedMs = 0;
   let thoughtIdx = 0;
 
+  if (thoughtsListEl) thoughtsListEl.innerHTML = "";
+
   const appendThought = (item) => {
-    if (!thoughtsListEl) return;
+    if (!thoughtsListEl || !item) return;
     const timeStr = `${(elapsedMs / 1000).toFixed(1)}s`;
     const itemEl = document.createElement("div");
     itemEl.className = "solver-thought-item";
@@ -4406,8 +4411,6 @@ async function runSolverWithEngagingProgress(generateFn, timeoutLimit = 15, opti
   if (pctEl) pctEl.textContent = "0%";
   if (fillEl) fillEl.style.width = "0%";
   if (modal) modal.classList.remove("hidden");
-
-  let elapsedMs = 0;
 
   const timer = setInterval(() => {
     elapsedMs += 100;
